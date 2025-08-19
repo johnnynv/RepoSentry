@@ -1,0 +1,107 @@
+# Development values for reposentry
+# Override default values for development environment
+
+# Image configuration
+image:
+  repository: reposentry/reposentry
+  tag: "latest"
+  pullPolicy: Always
+
+# Single replica for development
+replicaCount: 1
+
+# Reduced resources for development
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# Disable autoscaling
+autoscaling:
+  enabled: false
+
+# Simple persistence for development
+persistence:
+  enabled: true
+  storageClass: ""  # Use default
+  size: 5Gi
+
+# Development configuration
+config:
+  app:
+    logLevel: debug
+    logFormat: text  # Easier to read in development
+
+  polling:
+    interval: "1m"  # More frequent polling for testing
+    timeout: "30s"
+    maxWorkers: 2
+    batchSize: 3
+    retryAttempts: 2
+    retryBackoff: "2s"
+
+  tekton:
+    eventListenerURL: "http://tekton.dev.local:8080/webhook"
+    timeout: "30s"
+    headers:
+      X-Environment: "development"
+
+  repositories:
+    - name: test-repo
+      url: "https://github.com/example/test-repo"
+      provider: "github"
+      token: "${GITHUB_TOKEN}"
+      branchRegex: "^(main|develop|feature/.*)$"
+      pollingInterval: "1m"
+
+# Local secrets for development
+secrets:
+  create: true
+  data:
+    GITHUB_TOKEN: "ghp_example_token_for_development"
+    GITLAB_TOKEN: "glpat_example_token_for_development"
+
+# Ingress for local development
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  hosts:
+    - host: reposentry.dev.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+# Service configuration
+service:
+  type: NodePort
+  port: 8080
+  targetPort: 8080
+
+# Relaxed security for development
+podSecurityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+
+securityContext:
+  allowPrivilegeEscalation: true
+  readOnlyRootFilesystem: false
+
+# No network policy for development
+networkPolicy:
+  enabled: false
+
+# No monitoring for development
+serviceMonitor:
+  enabled: false
+
+# Additional development environment variables
+env:
+  - name: RS_ENVIRONMENT
+    value: "development"
+  - name: RS_DEBUG
+    value: "true"

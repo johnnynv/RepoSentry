@@ -1,0 +1,56 @@
+[Unit]
+Description=RepoSentry - Git Repository Monitor
+Documentation=https://github.com/johnnynv/RepoSentry
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=reposentry
+Group=reposentry
+
+# Binary location
+ExecStart=/usr/local/bin/reposentry run --config=/etc/reposentry/config.yaml
+
+# Configuration
+Environment=RS_LOG_LEVEL=info
+Environment=RS_DATA_DIR=/var/lib/reposentry
+EnvironmentFile=-/etc/reposentry/environment
+
+# Working directory
+WorkingDirectory=/var/lib/reposentry
+
+# Process management
+Restart=always
+RestartSec=10
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/reposentry /var/log/reposentry
+PrivateTmp=true
+PrivateDevices=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+CPUQuota=50%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=reposentry
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "reposentry.fullname" . }}
+  labels:
+    {{- include "reposentry.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    app:
+      name: {{ .Values.config.app.name }}
+      log_level: {{ .Values.config.app.logLevel }}
+      log_format: {{ .Values.config.app.logFormat }}
+      health_check_port: {{ .Values.config.app.healthCheckPort }}
+      data_dir: {{ .Values.config.app.dataDir }}
+      {{- if .Values.config.app.logFile }}
+      log_file: {{ .Values.config.app.logFile }}
+      {{- end }}
+
+    polling:
+      interval: {{ .Values.config.polling.interval }}
+      timeout: {{ .Values.config.polling.timeout }}
+      max_workers: {{ .Values.config.polling.maxWorkers }}
+      batch_size: {{ .Values.config.polling.batchSize }}
+      enable_api_fallback: true
+      retry_attempts: {{ .Values.config.polling.retryAttempts }}
+      retry_backoff: {{ .Values.config.polling.retryBackoff }}
+
+    storage:
+      type: {{ .Values.config.storage.type }}
+      {{- if eq .Values.config.storage.type "sqlite" }}
+      sqlite:
+        path: {{ .Values.config.storage.sqlite.path }}
+        max_connections: {{ .Values.config.storage.sqlite.maxConnections }}
+        connection_timeout: {{ .Values.config.storage.sqlite.connectionTimeout }}
+      {{- end }}
+
+    tekton:
+      event_listener_url: {{ .Values.config.tekton.eventListenerURL | quote }}
+      {{- if .Values.config.tekton.namespace }}
+      namespace: {{ .Values.config.tekton.namespace }}
+      {{- end }}
+      timeout: {{ .Values.config.tekton.timeout }}
+      {{- if .Values.config.tekton.headers }}
+      headers:
+        {{- toYaml .Values.config.tekton.headers | nindent 8 }}
+      {{- end }}
+
+    {{- if .Values.config.repositories }}
+    repositories:
+      {{- range .Values.config.repositories }}
+      - name: {{ .name }}
+        url: {{ .url }}
+        provider: {{ .provider }}
+        token: {{ .token | quote }}
+        branch_regex: {{ .branchRegex | quote }}
+        {{- if .pollingInterval }}
+        polling_interval: {{ .pollingInterval }}
+        {{- end }}
+      {{- end }}
+    {{- else }}
+    repositories: []
+    {{- end }}

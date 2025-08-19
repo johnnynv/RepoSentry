@@ -1,0 +1,60 @@
+# Production configuration example for RepoSentry
+# This is a production-ready configuration template
+
+app:
+  name: reposentry
+  log_level: info
+  log_format: json
+  log_file: /var/log/reposentry/reposentry.log
+  log_file_rotation:
+    max_size: 100      # MB
+    max_backups: 5
+    max_age: 30        # days
+    compress: true
+  health_check_port: 8080
+  data_dir: /var/lib/reposentry
+
+polling:
+  interval: 5m
+  timeout: 60s
+  max_workers: 5
+  batch_size: 10
+  enable_api_fallback: true
+  retry_attempts: 3
+  retry_backoff: 5s
+
+storage:
+  type: sqlite
+  sqlite:
+    path: /var/lib/reposentry/reposentry.db
+    max_connections: 20
+    connection_timeout: 30s
+
+tekton:
+  event_listener_url: "https://tekton.company.com/webhook"
+  timeout: 60s
+  headers:
+    X-Environment: "production"
+    X-Source: "reposentry"
+
+repositories:
+  - name: main-app
+    url: "https://github.com/company/main-app"
+    provider: github
+    token: "${GITHUB_TOKEN}"
+    branch_regex: "^(main|release/.*)$"
+    polling_interval: 3m
+
+  - name: backend-service
+    url: "https://gitlab.company.com/backend/service"
+    provider: gitlab
+    token: "${GITLAB_TOKEN}"
+    branch_regex: "^(main|staging|production)$"
+    polling_interval: 5m
+
+  - name: enterprise-gitlab
+    url: "https://gitlab-master.nvidia.com/chat-labs/OpenSource/rag"
+    provider: gitlab
+    token: "${GITLAB_ENTERPRISE_TOKEN}"
+    branch_regex: "^(main|develop)$"
+    polling_interval: 10m

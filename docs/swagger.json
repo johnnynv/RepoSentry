@@ -1,0 +1,393 @@
+{
+    "schemes": [
+        "http",
+        "https"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "A lightweight, cloud-native sentinel for monitoring GitLab and GitHub repositories\nThis API provides endpoints for managing repository monitoring, viewing status, and accessing metrics.",
+        "title": "RepoSentry API",
+        "contact": {
+            "name": "RepoSentry Support",
+            "url": "https://github.com/johnnynv/RepoSentry",
+            "email": "support@reposentry.dev"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://github.com/johnnynv/RepoSentry/blob/main/LICENSE"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/api/events": {
+            "get": {
+                "description": "Get events with pagination support",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "List events",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Number of events to return (max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of events to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated list of events",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/JSONResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/repositories": {
+            "get": {
+                "description": "Get all configured repositories with their monitoring status",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Repositories"
+                ],
+                "summary": "List repositories",
+                "responses": {
+                    "200": {
+                        "description": "List of repositories",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/JSONResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Returns the overall health status of all RepoSentry components",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Get system health",
+                "responses": {
+                    "200": {
+                        "description": "Healthy",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/JSONResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "503": {
+                        "description": "Unhealthy",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/JSONResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/health/live": {
+            "get": {
+                "description": "Kubernetes liveness probe endpoint - simple alive status",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Liveness probe",
+                "responses": {
+                    "200": {
+                        "description": "Alive",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/JSONResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/health/ready": {
+            "get": {
+                "description": "Kubernetes readiness probe endpoint - ready status",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Readiness probe",
+                "responses": {
+                    "200": {
+                        "description": "Ready",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/JSONResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics": {
+            "get": {
+                "description": "Returns application metrics and statistics",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Get metrics",
+                "responses": {
+                    "200": {
+                        "description": "Application metrics",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/JSONResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/status": {
+            "get": {
+                "description": "Returns runtime status and component information",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Status"
+                ],
+                "summary": "Get system status",
+                "responses": {
+                    "200": {
+                        "description": "System status",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/JSONResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/version": {
+            "get": {
+                "description": "Returns API and application version details",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get version information",
+                "responses": {
+                    "200": {
+                        "description": "Version information",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/JSONResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "JSONResponse": {
+            "description": "Standard API response wrapper",
+            "type": "object",
+            "properties": {
+                "data": {},
+                "error": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2023-12-01T10:00:00Z"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "description": "Bearer token for API authentication",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    },
+    "tags": [
+        {
+            "description": "Health check and readiness endpoints",
+            "name": "Health"
+        },
+        {
+            "description": "System status and runtime information",
+            "name": "Status"
+        },
+        {
+            "description": "Repository management and monitoring",
+            "name": "Repositories"
+        },
+        {
+            "description": "Event history and processing",
+            "name": "Events"
+        },
+        {
+            "description": "Application metrics and statistics",
+            "name": "Metrics"
+        },
+        {
+            "description": "System information and version",
+            "name": "System"
+        }
+    ]
+}

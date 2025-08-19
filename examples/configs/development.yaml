@@ -1,0 +1,46 @@
+# Development configuration example for RepoSentry
+# This configuration is optimized for development and testing
+
+app:
+  name: reposentry-dev
+  log_level: debug
+  log_format: text      # More readable in development
+  health_check_port: 8080
+  data_dir: ./data
+
+polling:
+  interval: 1m          # More frequent for testing
+  timeout: 30s
+  max_workers: 2
+  batch_size: 3
+  enable_api_fallback: true
+  retry_attempts: 2
+  retry_backoff: 2s
+
+storage:
+  type: sqlite
+  sqlite:
+    path: ./data/reposentry-dev.db
+    max_connections: 5
+    connection_timeout: 30s
+
+tekton:
+  event_listener_url: "http://localhost:8081/webhook"  # Local development
+  timeout: 30s
+  headers:
+    X-Environment: "development"
+
+repositories:
+  - name: test-repo
+    url: "https://github.com/example/test-repo"
+    provider: github
+    token: "${GITHUB_TOKEN}"
+    branch_regex: "^(main|develop|feature/.*)$"
+    polling_interval: 1m
+
+  - name: gitlab-test
+    url: "https://gitlab.com/example/test"
+    provider: gitlab
+    token: "${GITLAB_TOKEN}"
+    branch_regex: ".*"    # Monitor all branches in development
+    polling_interval: 2m

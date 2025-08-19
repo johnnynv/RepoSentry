@@ -1,0 +1,268 @@
+# Default values for reposentry.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# Image configuration
+image:
+  registry: docker.io
+  repository: reposentry/reposentry
+  tag: ""  # Defaults to chart appVersion
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# Deployment configuration
+replicaCount: 1
+
+# Update strategy
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+  automountServiceAccountToken: false
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+  annotations: {}
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: reposentry.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: reposentry-tls
+  #    hosts:
+  #      - reposentry.local
+
+# Persistence
+persistence:
+  enabled: true
+  storageClass: ""  # Use default storage class
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Node selection
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# Pod annotations and labels
+podAnnotations: {}
+podLabels: {}
+
+# Liveness and readiness probes
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+
+# Startup probe
+startupProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 30
+  successThreshold: 1
+
+# RepoSentry configuration
+config:
+  # Application settings
+  app:
+    name: reposentry
+    logLevel: info
+    logFormat: json
+    dataDir: /app/data
+    healthCheckPort: 8080
+
+  # Polling configuration
+  polling:
+    interval: "5m"
+    timeout: "30s"
+    maxWorkers: 2
+    batchSize: 5
+    retryAttempts: 3
+    retryBackoff: "2s"
+
+  # Storage configuration
+  storage:
+    type: sqlite
+    sqlite:
+      path: /app/data/reposentry.db
+      maxConnections: 10
+      connectionTimeout: "30s"
+
+  # Tekton configuration
+  tekton:
+    eventListenerURL: ""  # Must be provided
+    namespace: "tekton-pipelines"
+    timeout: "30s"
+    headers: {}
+
+  # Repository configuration
+  repositories: []
+    # Example:
+    # - name: example-repo
+    #   url: https://github.com/example/repo
+    #   provider: github
+    #   token: "${GITHUB_TOKEN}"
+    #   branchRegex: "^(main|master)$"
+    #   pollingInterval: "5m"
+
+# Secrets configuration
+secrets:
+  # Create secrets from environment variables
+  create: true
+  annotations: {}
+  # API tokens and sensitive data
+  data: {}
+    # GITHUB_TOKEN: ""
+    # GITLAB_TOKEN: ""
+    # TEKTON_AUTH_TOKEN: ""
+
+# Environment variables
+env: []
+  # - name: RS_LOG_LEVEL
+  #   value: "info"
+
+# Environment variables from ConfigMaps/Secrets
+envFrom: []
+  # - configMapRef:
+  #     name: reposentry-config
+  # - secretRef:
+  #     name: reposentry-secrets
+
+# Extra volumes
+extraVolumes: []
+  # - name: extra-config
+  #   configMap:
+  #     name: extra-config
+
+# Extra volume mounts
+extraVolumeMounts: []
+  # - name: extra-config
+  #   mountPath: /extra-config
+  #   readOnly: true
+
+# Init containers
+initContainers: []
+
+# Sidecar containers
+sidecars: []
+
+# Network policy
+networkPolicy:
+  enabled: false
+  ingress: []
+  egress: []
+
+# Pod monitor for Prometheus
+podMonitor:
+  enabled: false
+  annotations: {}
+  labels: {}
+  interval: 30s
+  path: /metrics
+  port: http
+
+# Service monitor for Prometheus
+serviceMonitor:
+  enabled: false
+  annotations: {}
+  labels: {}
+  interval: 30s
+  path: /metrics
+  port: http
+
+# Tests
+tests:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: curlimages/curl
+    tag: latest
+    pullPolicy: IfNotPresent

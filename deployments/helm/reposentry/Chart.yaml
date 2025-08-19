@@ -1,0 +1,25 @@
+apiVersion: v2
+name: reposentry
+description: A lightweight, cloud-native sentinel for monitoring GitLab and GitHub repositories
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+keywords:
+  - git
+  - monitoring
+  - cicd
+  - tekton
+  - webhook
+
+home: https://github.com/johnnynv/RepoSentry
+sources:
+  - https://github.com/johnnynv/RepoSentry
+
+maintainers:
+  - name: johnnynv
+    email: johnnynv@example.com
+
+annotations:
+  category: Development Tools
+  licenses: MIT

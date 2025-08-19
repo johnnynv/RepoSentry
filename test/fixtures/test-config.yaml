@@ -1,0 +1,52 @@
+# Test configuration for RepoSentry
+app:
+  name: "reposentry-test"
+  log_level: "debug"
+  log_format: "json"
+  health_check_port: 8080
+  data_dir: "/tmp/reposentry-test"
+
+polling:
+  interval: "2m"
+  timeout: "10s"
+  max_workers: 2
+  batch_size: 5
+  enable_api_fallback: true
+
+storage:
+  type: "sqlite"
+  sqlite:
+    path: "/tmp/reposentry-test/test.db"
+    max_connections: 5
+    connection_timeout: "10s"
+
+tekton:
+  event_listener_url: "http://localhost:8080/webhook"
+  timeout: "5s"
+  retry_attempts: 2
+  retry_backoff: "500ms"
+  headers:
+    X-Source: "reposentry-test"
+    Content-Type: "application/json"
+
+repositories:
+  - name: "test-github-repo"
+    url: "https://github.com/test/repo"
+    provider: "github"
+    token: "${GITHUB_TOKEN}"
+    branch_regex: "^(main|develop)$"
+    enabled: true
+    
+  - name: "test-gitlab-repo"
+    url: "https://gitlab.com/test/repo"
+    provider: "gitlab"
+    token: "${GITLAB_TOKEN}"
+    branch_regex: "^(master|develop)$"
+    enabled: true
+
+security:
+  allowed_env_vars:
+    - "GITHUB_TOKEN"
+    - "GITLAB_TOKEN"
+    - "*_TOKEN"
+  require_https: true
