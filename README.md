@@ -1,6 +1,5 @@
 # RepoSentry
 
-
 A lightweight, cloud-native sentinel for monitoring GitLab and GitHub repositories. RepoSentry watches your Git repositories for changes and triggers Tekton pipelines via webhooks.
 
 ## 🚀 Quick Start
