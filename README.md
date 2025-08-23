@@ -11,7 +11,9 @@ mkdir repository-monitor
 cd repository-monitor
 
 # Download the RepoSentry binary
-wget https://github.com/johnnynv/RepoSentry/releases/latest/download/reposentry
+wget https://github.com/johnnynv/RepoSentry/releases/latest/download/reposentry-v0.1.0.linux.x86_64
+mv reposentry-v0.1.0.linux.x86_64 reposentry
+
 chmod +x reposentry
 
 # Run interactive configuration wizard
