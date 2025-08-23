@@ -23,6 +23,9 @@ LDFLAGS := -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME) -X main.Gi
 help:
 	@echo "Available targets:"
 	@sed -n 's/^##//p' $(MAKEFILE_LIST) | column -t -s ':' | sed -e 's/^/ /'
+	@echo ""
+	@echo "📖 Swagger UI (without full app):"
+	@echo "  make swagger-ui     - Start static server at http://localhost:8081/swagger"
 
 ## build: Build the binary
 .PHONY: build
@@ -105,6 +108,12 @@ mod-download:
 swagger:
 	@echo "Generating Swagger documentation..."
 	@go run github.com/swaggo/swag/cmd/swag init -g internal/api/docs.go -o docs --parseDependency
+
+## swagger-ui: Start Swagger UI static server (without full app)
+.PHONY: swagger-ui
+swagger-ui:
+	@echo "Starting Swagger UI static server..."
+	@go run tools/swagger-static-server.go
 
 ## deps: Install development dependencies
 .PHONY: deps
