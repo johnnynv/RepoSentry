@@ -237,12 +237,12 @@ func TestSQLiteStorage_GetPendingEvents(t *testing.T) {
 
 	// Save multiple events with different statuses
 	events := []*types.Event{
-		{ID: "event-1", Type: types.EventTypeBranchUpdated, Repository: "repo1", Branch: "main", 
-		 CommitSHA: "abc", Provider: "github", Timestamp: time.Now(), Status: types.EventStatusPending},
-		{ID: "event-2", Type: types.EventTypeBranchUpdated, Repository: "repo2", Branch: "main", 
-		 CommitSHA: "def", Provider: "github", Timestamp: time.Now(), Status: types.EventStatusProcessed},
-		{ID: "event-3", Type: types.EventTypeBranchUpdated, Repository: "repo3", Branch: "main", 
-		 CommitSHA: "ghi", Provider: "github", Timestamp: time.Now(), Status: types.EventStatusPending},
+		{ID: "event-1", Type: types.EventTypeBranchUpdated, Repository: "repo1", Branch: "main",
+			CommitSHA: "abc", Provider: "github", Timestamp: time.Now(), Status: types.EventStatusPending},
+		{ID: "event-2", Type: types.EventTypeBranchUpdated, Repository: "repo2", Branch: "main",
+			CommitSHA: "def", Provider: "github", Timestamp: time.Now(), Status: types.EventStatusProcessed},
+		{ID: "event-3", Type: types.EventTypeBranchUpdated, Repository: "repo3", Branch: "main",
+			CommitSHA: "ghi", Provider: "github", Timestamp: time.Now(), Status: types.EventStatusPending},
 	}
 
 	for _, event := range events {

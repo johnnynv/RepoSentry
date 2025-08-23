@@ -111,7 +111,6 @@ func (m *MigrationManager) GetMigrations() []Migration {
 				-- For now, just leave the column but don't use it
 			`,
 		},
-
 	}
 }
 
@@ -129,7 +128,7 @@ func (m *MigrationManager) Migrate(ctx context.Context) error {
 	}
 
 	migrations := m.GetMigrations()
-	
+
 	// Apply pending migrations
 	for _, migration := range migrations {
 		if migration.Version <= currentVersion {
@@ -137,7 +136,7 @@ func (m *MigrationManager) Migrate(ctx context.Context) error {
 		}
 
 		if err := m.applyMigration(ctx, migration); err != nil {
-			return fmt.Errorf("failed to apply migration %d (%s): %w", 
+			return fmt.Errorf("failed to apply migration %d (%s): %w",
 				migration.Version, migration.Name, err)
 		}
 	}
@@ -153,12 +152,12 @@ func (m *MigrationManager) Rollback(ctx context.Context, targetVersion int) erro
 	}
 
 	if targetVersion >= currentVersion {
-		return fmt.Errorf("target version %d is not less than current version %d", 
+		return fmt.Errorf("target version %d is not less than current version %d",
 			targetVersion, currentVersion)
 	}
 
 	migrations := m.GetMigrations()
-	
+
 	// Apply rollbacks in reverse order
 	for i := len(migrations) - 1; i >= 0; i-- {
 		migration := migrations[i]
@@ -170,7 +169,7 @@ func (m *MigrationManager) Rollback(ctx context.Context, targetVersion int) erro
 		}
 
 		if err := m.rollbackMigration(ctx, migration); err != nil {
-			return fmt.Errorf("failed to rollback migration %d (%s): %w", 
+			return fmt.Errorf("failed to rollback migration %d (%s): %w",
 				migration.Version, migration.Name, err)
 		}
 	}
@@ -182,12 +181,16 @@ func (m *MigrationManager) Rollback(ctx context.Context, targetVersion int) erro
 func (m *MigrationManager) getCurrentVersion(ctx context.Context) (int, error) {
 	var version int
 	query := "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
-	
+
 	err := m.db.QueryRowContext(ctx, query).Scan(&version)
 	if err != nil {
+		// If table doesn't exist, return 0 as the initial version
+		if strings.Contains(err.Error(), "no such table") {
+			return 0, nil
+		}
 		return 0, err
 	}
-	
+
 	return version, nil
 }
 
@@ -200,7 +203,7 @@ func (m *MigrationManager) ensureMigrationsTable(ctx context.Context) error {
 			applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
 	`
-	
+
 	_, err := m.db.ExecContext(ctx, query)
 	return err
 }
@@ -212,6 +215,18 @@ func (m *MigrationManager) applyMigration(ctx context.Context, migration Migrati
 		return err
 	}
 	defer tx.Rollback()
+
+	// Ensure schema_migrations table exists in this transaction
+	_, err = tx.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version INTEGER PRIMARY KEY,
+			name TEXT NOT NULL,
+			applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to ensure schema_migrations table in transaction: %w", err)
+	}
 
 	// Execute migration SQL
 	statements := m.splitSQL(migration.Up)
@@ -225,7 +240,7 @@ func (m *MigrationManager) applyMigration(ctx context.Context, migration Migrati
 	}
 
 	// Record migration
-	_, err = tx.ExecContext(ctx, 
+	_, err = tx.ExecContext(ctx,
 		"INSERT INTO schema_migrations (version, name) VALUES (?, ?)",
 		migration.Version, migration.Name)
 	if err != nil {
@@ -255,7 +270,7 @@ func (m *MigrationManager) rollbackMigration(ctx context.Context, migration Migr
 	}
 
 	// Remove migration record
-	_, err = tx.ExecContext(ctx, 
+	_, err = tx.ExecContext(ctx,
 		"DELETE FROM schema_migrations WHERE version = ?", migration.Version)
 	if err != nil {
 		return err
@@ -271,20 +286,20 @@ func (m *MigrationManager) splitSQL(sql string) []string {
 	if sql == "" {
 		return []string{}
 	}
-	
+
 	// Split by semicolon
 	statements := strings.Split(sql, ";")
 	var result []string
-	
+
 	for _, stmt := range statements {
 		// Clean up the statement
 		stmt = strings.TrimSpace(stmt)
-		
+
 		// Skip empty statements and comments
 		if stmt == "" {
 			continue
 		}
-		
+
 		// Remove SQL comments (-- style)
 		lines := strings.Split(stmt, "\n")
 		var cleanLines []string
@@ -294,7 +309,7 @@ func (m *MigrationManager) splitSQL(sql string) []string {
 				cleanLines = append(cleanLines, line)
 			}
 		}
-		
+
 		if len(cleanLines) > 0 {
 			cleanStmt := strings.Join(cleanLines, " ")
 			cleanStmt = strings.TrimSpace(cleanStmt)
@@ -303,7 +318,7 @@ func (m *MigrationManager) splitSQL(sql string) []string {
 			}
 		}
 	}
-	
+
 	return result
 }
 
@@ -314,7 +329,7 @@ func (m *MigrationManager) GetAppliedMigrations(ctx context.Context) ([]AppliedM
 		FROM schema_migrations 
 		ORDER BY version
 	`
-	
+
 	rows, err := m.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err

@@ -24,14 +24,14 @@ var versionCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(versionCmd)
-	
+
 	// Add format flag
 	versionCmd.Flags().StringP("output", "o", "text", "output format (text, json)")
 }
 
 func runVersion(cmd *cobra.Command, args []string) error {
 	output, _ := cmd.Flags().GetString("output")
-	
+
 	buildInfo := BuildInfo{
 		Version:   Version,
 		BuildTime: BuildTime,

@@ -2,152 +2,175 @@ package config
 
 import (
 	"os"
-	"strings"
 	"testing"
 
-	"github.com/johnnynv/RepoSentry/pkg/logger"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/johnnynv/RepoSentry/internal/testutils"
+	"github.com/johnnynv/RepoSentry/pkg/types"
 )
 
-func TestConfigManager_Load(t *testing.T) {
-	// Create test logger
-	testLogger := logger.GetDefaultLogger()
-	
-	// Create config manager
-	manager := NewManager(testLogger)
-	
-	// Test loading valid configuration
-	err := manager.Load("../../test/fixtures/test-config.yaml")
-	if err != nil {
-		t.Fatalf("Failed to load test config: %v", err)
-	}
-	
-	// Verify configuration was loaded
-	config := manager.Get()
-	if config == nil {
-		t.Fatal("Configuration should not be nil after loading")
-	}
-	
-	// Verify basic configuration values
-	if config.App.Name != "reposentry-test" {
-		t.Errorf("Expected app name 'reposentry-test', got '%s'", config.App.Name)
-	}
-	
-	if len(config.Repositories) != 2 {
-		t.Errorf("Expected 2 repositories, got %d", len(config.Repositories))
-	}
+// ConfigTestSuite provides a test suite for config package
+type ConfigTestSuite struct {
+	testutils.BaseTestSuite
+	manager *Manager
 }
 
-func TestConfigManager_LoadWithDefaults(t *testing.T) {
-	testLogger := logger.GetDefaultLogger()
-	manager := NewManager(testLogger)
-	
-	// Test loading with non-existent file (should use defaults but may fail validation)
-	err := manager.LoadWithDefaults("nonexistent.yaml")
-	// This might fail validation due to missing required fields, which is expected
-	if err != nil {
-		// Check that it's a validation error, not a file loading error
-		if !contains(err.Error(), "validation") {
-			t.Fatalf("Expected validation error, got: %v", err)
-		}
-		t.Logf("LoadWithDefaults failed validation as expected: %v", err)
-		return
-	}
-	
-	config := manager.Get()
-	if config == nil {
-		t.Fatal("Configuration should not be nil")
-	}
-	
-	// Verify defaults were applied
-	if config.App.Name != "reposentry" {
-		t.Errorf("Expected default app name 'reposentry', got '%s'", config.App.Name)
-	}
-	
-	if config.App.LogLevel != "info" {
-		t.Errorf("Expected default log level 'info', got '%s'", config.App.LogLevel)
-	}
+// SetupTest runs before each test
+func (s *ConfigTestSuite) SetupTest() {
+	s.BaseTestSuite.SetupTest()
+	s.manager = NewManager(s.GetTestLogger())
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || strings.Contains(s, substr)))
+// TestConfigManager_Load tests configuration loading
+func (s *ConfigTestSuite) TestConfigManager_Load() {
+	err := s.manager.Load("../../test/fixtures/test-config.yaml")
+	s.RequireNoError(err)
+
+	config := s.manager.Get()
+	require.NotNil(s.T(), config)
+
+	assert.Equal(s.T(), "reposentry-test", config.App.Name)
+	assert.Len(s.T(), config.Repositories, 2)
 }
 
-func TestConfigManager_GetRepositories(t *testing.T) {
-	testLogger := logger.GetDefaultLogger()
-	manager := NewManager(testLogger)
-	
-	err := manager.Load("../../test/fixtures/test-config.yaml")
-	if err != nil {
-		t.Fatalf("Failed to load test config: %v", err)
-	}
-	
-	repos := manager.GetRepositories()
-	if len(repos) != 2 {
-		t.Errorf("Expected 2 enabled repositories, got %d", len(repos))
-	}
-	
+// TestConfigManager_LoadWithDefaults tests loading with defaults
+func (s *ConfigTestSuite) TestConfigManager_LoadWithDefaults() {
+	err := s.manager.LoadWithDefaults("nonexistent.yaml")
+
+	// Should fail validation due to missing required fields
+	assert.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "validation")
+}
+
+// TestConfigManager_GetRepositories tests repository retrieval
+func (s *ConfigTestSuite) TestConfigManager_GetRepositories() {
+	err := s.manager.Load("../../test/fixtures/test-config.yaml")
+	s.RequireNoError(err)
+
+	repos := s.manager.GetRepositories()
+	assert.Len(s.T(), repos, 2)
+
 	// All test repositories should be enabled
 	for _, repo := range repos {
-		if !repo.Enabled {
-			t.Errorf("Repository %s should be enabled", repo.Name)
-		}
+		assert.True(s.T(), repo.Enabled, "Repository %s should be enabled", repo.Name)
 	}
 }
 
-func TestConfigManager_GetRepository(t *testing.T) {
-	testLogger := logger.GetDefaultLogger()
-	manager := NewManager(testLogger)
-	
-	err := manager.Load("../../test/fixtures/test-config.yaml")
-	if err != nil {
-		t.Fatalf("Failed to load test config: %v", err)
-	}
-	
+// TestConfigManager_GetRepository tests single repository lookup
+func (s *ConfigTestSuite) TestConfigManager_GetRepository() {
+	err := s.manager.Load("../../test/fixtures/test-config.yaml")
+	s.RequireNoError(err)
+
 	// Test existing repository
-	repo, found := manager.GetRepository("test-github-repo")
-	if !found {
-		t.Error("Should find test-github-repo")
-	}
-	if repo == nil {
-		t.Error("Repository should not be nil")
-	}
-	if repo.Provider != "github" {
-		t.Errorf("Expected provider 'github', got '%s'", repo.Provider)
-	}
-	
+	repo, found := s.manager.GetRepository("test-github-repo")
+	assert.True(s.T(), found)
+	require.NotNil(s.T(), repo)
+	assert.Equal(s.T(), "github", repo.Provider)
+
 	// Test non-existent repository
-	_, found = manager.GetRepository("nonexistent")
-	if found {
-		t.Error("Should not find nonexistent repository")
-	}
+	_, found = s.manager.GetRepository("nonexistent")
+	assert.False(s.T(), found)
 }
 
-func TestConfigManager_CheckPermissions(t *testing.T) {
-	testLogger := logger.GetDefaultLogger()
-	manager := NewManager(testLogger)
-	
-	err := manager.Load("../../test/fixtures/test-config.yaml")
-	if err != nil {
-		t.Fatalf("Failed to load test config: %v", err)
+// TestConfigManager_CheckPermissions tests permission checking
+func (s *ConfigTestSuite) TestConfigManager_CheckPermissions() {
+	// Create a test config with environment variable references
+	testConfig := &types.Config{
+		App: types.AppConfig{
+			Name:     "test-app",
+			LogLevel: "info",
+			DataDir:  "/tmp/test",
+		},
+		Repositories: []types.Repository{
+			{
+				Name:     "test-github-repo",
+				URL:      "https://github.com/test/repo",
+				Provider: "github",
+				Token:    "${GITHUB_TOKEN}",
+				Enabled:  true,
+			},
+			{
+				Name:     "test-gitlab-repo",
+				URL:      "https://gitlab.com/test/repo",
+				Provider: "gitlab",
+				Token:    "${GITLAB_TOKEN}",
+				Enabled:  true,
+			},
+		},
 	}
-	
+
+	s.manager.SetConfig(testConfig)
+
+	// Store and clear environment variables
+	originalGithubToken := os.Getenv("GITHUB_TOKEN")
+	originalGitlabToken := os.Getenv("GITLAB_TOKEN")
+
+	os.Unsetenv("GITHUB_TOKEN")
+	os.Unsetenv("GITLAB_TOKEN")
+
+	defer func() {
+		if originalGithubToken != "" {
+			os.Setenv("GITHUB_TOKEN", originalGithubToken)
+		}
+		if originalGitlabToken != "" {
+			os.Setenv("GITLAB_TOKEN", originalGitlabToken)
+		}
+	}()
+
 	// Test without environment variables (should fail)
-	err = manager.CheckPermissions()
-	if err == nil {
-		t.Error("CheckPermissions should fail without environment variables")
-	}
-	
+	err := s.manager.CheckPermissions()
+	assert.Error(s.T(), err)
+	assert.Contains(s.T(), err.Error(), "missing required tokens")
+
 	// Set test environment variables
 	os.Setenv("GITHUB_TOKEN", "test-github-token")
 	os.Setenv("GITLAB_TOKEN", "test-gitlab-token")
-	defer func() {
-		os.Unsetenv("GITHUB_TOKEN")
-		os.Unsetenv("GITLAB_TOKEN")
-	}()
-	
+
 	// Test with environment variables (should pass)
-	err = manager.CheckPermissions()
-	if err != nil {
-		t.Errorf("CheckPermissions should pass with environment variables: %v", err)
+	err = s.manager.CheckPermissions()
+	assert.NoError(s.T(), err)
+}
+
+// TestConfigManager_Validation tests configuration validation
+func (s *ConfigTestSuite) TestConfigManager_Validation() {
+	// Test valid config
+	err := s.manager.Validate("../../test/fixtures/test-config.yaml")
+	assert.NoError(s.T(), err)
+
+	// Test invalid config file
+	err = s.manager.Validate("nonexistent.yaml")
+	assert.Error(s.T(), err)
+}
+
+// TestConfigManager_ThreadSafety tests concurrent access
+func (s *ConfigTestSuite) TestConfigManager_ThreadSafety() {
+	err := s.manager.Load("../../test/fixtures/test-config.yaml")
+	s.RequireNoError(err)
+
+	// Test concurrent reads
+	done := make(chan bool, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			defer func() { done <- true }()
+
+			config := s.manager.Get()
+			assert.NotNil(s.T(), config)
+
+			repos := s.manager.GetRepositories()
+			assert.Len(s.T(), repos, 2)
+		}()
 	}
+
+	// Wait for all goroutines
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+}
+
+// Run the test suite
+func TestConfigSuite(t *testing.T) {
+	suite.Run(t, new(ConfigTestSuite))
 }

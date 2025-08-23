@@ -1,11 +1,12 @@
 package trigger
 
 import (
+	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"testing"
 )
 
 func TestURLParser_ParseRepositoryURL(t *testing.T) {
-	parser := NewURLParser()
+	parser := NewURLParser(logger.GetDefaultLogger().WithField("test", "urlparser"))
 
 	tests := []struct {
 		name     string
@@ -190,7 +191,7 @@ func TestURLParser_ParseRepositoryURL(t *testing.T) {
 }
 
 func TestURLParser_GetProviderType(t *testing.T) {
-	parser := NewURLParser()
+	parser := NewURLParser(logger.GetDefaultLogger().WithField("test", "urlparser"))
 
 	tests := []struct {
 		name     string
@@ -250,7 +251,7 @@ func TestURLParser_GetProviderType(t *testing.T) {
 }
 
 func TestURLParser_ValidateRepositoryURL(t *testing.T) {
-	parser := NewURLParser()
+	parser := NewURLParser(logger.GetDefaultLogger().WithField("test", "urlparser"))
 
 	validURLs := []string{
 		"https://github.com/torvalds/linux",
@@ -289,14 +290,14 @@ func TestURLParser_ValidateRepositoryURL(t *testing.T) {
 }
 
 func TestURLParser_BuildRepoURLs(t *testing.T) {
-	parser := NewURLParser()
+	parser := NewURLParser(logger.GetDefaultLogger().WithField("test", "urlparser"))
 
 	tests := []struct {
-		name      string
-		instance  string
-		fullName  string
-		provider  string
-		expected  *RepositoryInfo
+		name     string
+		instance string
+		fullName string
+		provider string
+		expected *RepositoryInfo
 	}{
 		{
 			name:     "GitHub public",

@@ -2,13 +2,16 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/johnnynv/RepoSentry/internal/config"
 	"github.com/johnnynv/RepoSentry/internal/gitclient"
+	"github.com/johnnynv/RepoSentry/internal/poller"
 	"github.com/johnnynv/RepoSentry/internal/storage"
 	"github.com/johnnynv/RepoSentry/internal/trigger"
 	"github.com/johnnynv/RepoSentry/pkg/logger"
+	"github.com/johnnynv/RepoSentry/pkg/types"
 )
 
 // BaseComponent provides common functionality for all components
@@ -79,11 +82,11 @@ func (c *BaseComponent) setError(err error) {
 // ConfigComponent wraps the configuration manager
 type ConfigComponent struct {
 	BaseComponent
-	manager config.Manager
+	manager *config.Manager
 }
 
 // NewConfigComponent creates a new ConfigComponent
-func NewConfigComponent(manager config.Manager, parentLogger *logger.Entry) *ConfigComponent {
+func NewConfigComponent(manager *config.Manager, parentLogger *logger.Entry) *ConfigComponent {
 	return &ConfigComponent{
 		BaseComponent: BaseComponent{
 			name:   "config",
@@ -166,7 +169,13 @@ func (c *StorageComponent) Start(ctx context.Context) error {
 		"operation": "start",
 	}).Info("Starting storage component")
 
-	// Storage should already be initialized, just verify connectivity
+	// Initialize storage (run migrations, create tables)
+	if err := c.storage.Initialize(ctx); err != nil {
+		c.setError(err)
+		return fmt.Errorf("failed to initialize storage: %w", err)
+	}
+
+	// Verify connectivity
 	if err := c.storage.HealthCheck(ctx); err != nil {
 		c.setError(err)
 		return err
@@ -273,22 +282,78 @@ func (c *GitClientFactoryComponent) Health(ctx context.Context) error {
 	return nil
 }
 
-// TriggerFactoryComponent wraps the trigger factory
-type TriggerFactoryComponent struct {
+// TriggerComponent wraps the trigger manager
+type TriggerComponent struct {
 	BaseComponent
-	factory *trigger.TriggerFactory
+	trigger trigger.Trigger
 }
 
-// NewTriggerFactoryComponent creates a new TriggerFactoryComponent
-func NewTriggerFactoryComponent(factory *trigger.TriggerFactory, parentLogger *logger.Entry) *TriggerFactoryComponent {
-	return &TriggerFactoryComponent{
+// NewTriggerComponent creates a new TriggerComponent
+func NewTriggerComponent(trigger trigger.Trigger, parentLogger *logger.Entry) *TriggerComponent {
+	return &TriggerComponent{
 		BaseComponent: BaseComponent{
 			name:   "trigger",
 			logger: parentLogger.WithField("component", "trigger"),
 			state:  ComponentStateUnknown,
 		},
-		factory: factory,
+		trigger: trigger,
 	}
+}
+
+// Start implements Component.Start
+func (c *TriggerComponent) Start(ctx context.Context) error {
+	c.setState(ComponentStateStarting)
+	c.startedAt = time.Now()
+
+	c.logger.WithFields(logger.Fields{
+		"operation": "start",
+	}).Info("Starting trigger component")
+
+	// Verify trigger is working
+	if err := c.trigger.HealthCheck(ctx); err != nil {
+		c.setError(err)
+		return err
+	}
+
+	c.setState(ComponentStateRunning)
+
+	c.logger.WithFields(logger.Fields{
+		"operation": "start",
+		"duration":  time.Since(c.startedAt),
+	}).Info("Trigger component started successfully")
+
+	return nil
+}
+
+// Stop implements Component.Stop
+func (c *TriggerComponent) Stop(ctx context.Context) error {
+	c.setState(ComponentStateStopping)
+
+	c.logger.WithFields(logger.Fields{
+		"operation": "stop",
+	}).Info("Stopping trigger component")
+
+	if err := c.trigger.Close(); err != nil {
+		c.logger.WithError(err).Error("Error closing trigger")
+	}
+
+	c.setState(ComponentStateStopped)
+
+	c.logger.WithFields(logger.Fields{
+		"operation": "stop",
+	}).Info("Trigger component stopped successfully")
+
+	return nil
+}
+
+// Health implements Component.Health
+func (c *TriggerComponent) Health(ctx context.Context) error {
+	return c.trigger.HealthCheck(ctx)
+}
+
+// TriggerFactoryComponent wraps the trigger factory
+type TriggerFactoryComponent struct {
+	BaseComponent
 }
 
 // Start implements Component.Start
@@ -335,6 +400,97 @@ func (c *TriggerFactoryComponent) Health(ctx context.Context) error {
 	return nil
 }
 
-// TODO: PollerComponent - 需要重新设计接口
-// 暂时注释掉，等poller接口稳定后再实现
+// PollerComponent wraps a Poller implementation
+type PollerComponent struct {
+	BaseComponent
+	poller       poller.Poller
+	repositories []types.Repository
+}
 
+// NewPollerComponent creates a new PollerComponent
+func NewPollerComponent(pollerImpl poller.Poller, repositories []types.Repository, parentLogger *logger.Entry) *PollerComponent {
+	return &PollerComponent{
+		BaseComponent: BaseComponent{
+			name:   "poller",
+			logger: parentLogger.WithField("component", "poller"),
+			state:  ComponentStateUnknown,
+		},
+		poller:       pollerImpl,
+		repositories: repositories,
+	}
+}
+
+// Start implements Component.Start
+func (c *PollerComponent) Start(ctx context.Context) error {
+	c.setState(ComponentStateStarting)
+	c.startedAt = time.Now()
+
+	c.logger.WithFields(logger.Fields{
+		"operation":        "start",
+		"repository_count": len(c.repositories),
+	}).Info("Starting poller component")
+
+	// Start the poller
+	if err := c.poller.Start(ctx); err != nil {
+		c.setState(ComponentStateError)
+		return fmt.Errorf("failed to start poller: %w", err)
+	}
+
+	// Schedule all enabled repositories
+	for _, repo := range c.repositories {
+		if repo.Enabled {
+			scheduler := c.poller.GetScheduler()
+			if err := scheduler.Schedule(repo); err != nil {
+				c.logger.WithError(err).WithFields(logger.Fields{
+					"repository": repo.Name,
+				}).Warn("Failed to schedule repository")
+			} else {
+				c.logger.WithFields(logger.Fields{
+					"repository": repo.Name,
+					"provider":   repo.Provider,
+				}).Info("Scheduled repository for polling")
+			}
+		}
+	}
+
+	c.setState(ComponentStateRunning)
+
+	c.logger.WithFields(logger.Fields{
+		"operation": "start",
+		"duration":  time.Since(c.startedAt),
+	}).Info("Poller component started successfully")
+
+	return nil
+}
+
+// Stop implements Component.Stop
+func (c *PollerComponent) Stop(ctx context.Context) error {
+	c.setState(ComponentStateStopping)
+
+	c.logger.WithFields(logger.Fields{
+		"operation": "stop",
+	}).Info("Stopping poller component")
+
+	// Stop the poller
+	if err := c.poller.Stop(ctx); err != nil {
+		c.logger.WithError(err).Error("Failed to stop poller")
+		return err
+	}
+
+	c.setState(ComponentStateStopped)
+
+	c.logger.WithFields(logger.Fields{
+		"operation": "stop",
+	}).Info("Poller component stopped successfully")
+
+	return nil
+}
+
+// Health implements Component.Health
+func (c *PollerComponent) Health(ctx context.Context) error {
+	status := c.poller.GetStatus()
+	if !status.Running {
+		return fmt.Errorf("poller is not running")
+	}
+	return nil
+}

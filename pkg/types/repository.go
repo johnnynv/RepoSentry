@@ -6,14 +6,14 @@ import (
 
 // Repository represents a Git repository configuration
 type Repository struct {
-	Name             string        `yaml:"name" json:"name"`
-	URL              string        `yaml:"url" json:"url"`
-	Provider         string        `yaml:"provider" json:"provider"` // github, gitlab
-	Token            string        `yaml:"token" json:"-"`           // Hidden in JSON output
-	BranchRegex      string        `yaml:"branch_regex" json:"branch_regex"`
-	Enabled          bool          `yaml:"enabled" json:"enabled"`
-	PollingInterval  time.Duration `yaml:"polling_interval,omitempty" json:"polling_interval,omitempty"`
-	APIBaseURL       string        `yaml:"api_base_url,omitempty" json:"api_base_url,omitempty"`
+	Name            string        `yaml:"name" json:"name"`
+	URL             string        `yaml:"url" json:"url"`
+	Provider        string        `yaml:"provider" json:"provider"` // github, gitlab
+	Token           string        `yaml:"token" json:"-"`           // Hidden in JSON output
+	BranchRegex     string        `yaml:"branch_regex" json:"branch_regex"`
+	Enabled         bool          `yaml:"enabled" json:"enabled"`
+	PollingInterval time.Duration `yaml:"polling_interval,omitempty" json:"polling_interval,omitempty"`
+	APIBaseURL      string        `yaml:"api_base_url,omitempty" json:"api_base_url,omitempty"`
 }
 
 // Branch represents a Git branch

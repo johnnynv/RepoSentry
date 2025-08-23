@@ -28,7 +28,7 @@ type TektonTrigger struct {
 }
 
 // NewTektonTrigger creates a new Tekton trigger
-func NewTektonTrigger(config TriggerConfig) (*TektonTrigger, error) {
+func NewTektonTrigger(config TriggerConfig, parentLogger *logger.Entry) (*TektonTrigger, error) {
 	if err := validateTektonConfig(config); err != nil {
 		return nil, fmt.Errorf("invalid Tekton configuration: %w", err)
 	}
@@ -49,8 +49,8 @@ func NewTektonTrigger(config TriggerConfig) (*TektonTrigger, error) {
 	trigger := &TektonTrigger{
 		config:      config,
 		httpClient:  httpClient,
-		transformer: NewEventTransformer(),
-		logger: logger.GetDefaultLogger().WithFields(logger.Fields{
+		transformer: NewEventTransformer(parentLogger),
+		logger: parentLogger.WithFields(logger.Fields{
 			"component": "trigger",
 			"module":    "tekton",
 			"url":       config.Tekton.EventListenerURL,
@@ -71,12 +71,12 @@ func NewTektonTrigger(config TriggerConfig) (*TektonTrigger, error) {
 // SendEvent sends a single event to Tekton EventListener
 func (t *TektonTrigger) SendEvent(ctx context.Context, event types.Event) (*TriggerResult, error) {
 	startTime := time.Now()
-	
+
 	t.logger.WithFields(logger.Fields{
-		"operation": "send_event",
-		"event_id":  event.ID,
+		"operation":  "send_event",
+		"event_id":   event.ID,
 		"repository": event.Repository,
-		"branch":    event.Branch,
+		"branch":     event.Branch,
 		"event_type": event.Type,
 	}).Info("Sending event to Tekton EventListener")
 
@@ -85,10 +85,10 @@ func (t *TektonTrigger) SendEvent(ctx context.Context, event types.Event) (*Trig
 		Timestamp: startTime,
 	}
 
-	// Transform event to Tekton payload
-	payload, err := t.transformer.TransformToTekton(event)
+	// Transform event to CloudEvents standard format
+	payload, err := t.transformer.TransformToCloudEvents(event)
 	if err != nil {
-		result.Error = fmt.Errorf("failed to transform event: %w", err)
+		result.Error = fmt.Errorf("failed to transform event to CloudEvents format: %w", err)
 		result.Duration = time.Since(startTime)
 		t.updateMetrics(false, result.Duration)
 		return result, result.Error
@@ -99,41 +99,46 @@ func (t *TektonTrigger) SendEvent(ctx context.Context, event types.Event) (*Trig
 	result.StatusCode = statusCode
 	result.ResponseBody = responseBody
 	result.Duration = time.Since(startTime)
-	
+
 	if err != nil {
 		result.Error = err
 		result.Success = false
 		t.updateMetrics(false, result.Duration)
-		
+
 		t.logger.WithFields(logger.Fields{
-			"operation":     "send_event",
-			"event_id":      event.ID,
-			"status_code":   statusCode,
-			"duration":      result.Duration,
-			"error":         err.Error(),
+			"operation":   "send_event",
+			"event_id":    event.ID,
+			"status_code": statusCode,
+			"duration":    result.Duration,
+			"error":       err.Error(),
 		}).Error("Failed to send event to Tekton EventListener")
-		
+
 		return result, err
 	}
 
 	result.Success = true
 	t.updateMetrics(true, result.Duration)
-	
+
 	// Add metadata
 	result.Metadata = map[string]string{
 		"tekton_namespace":   t.config.Tekton.Namespace,
-		"payload_short_sha":  payload.ShortSHA,
-		"payload_ref":        payload.Ref,
+		"payload_short_sha":  payload.Data.Commit.ShortSHA,
+		"payload_ref":        payload.Data.Branch.Ref,
 		"response_length":    fmt.Sprintf("%d", len(responseBody)),
+		"cloudevents_id":     payload.ID,
+		"cloudevents_type":   payload.Type,
+		"cloudevents_source": payload.Source,
 	}
 
 	t.logger.WithFields(logger.Fields{
-		"operation":     "send_event",
-		"event_id":      event.ID,
-		"status_code":   statusCode,
-		"duration":      result.Duration,
-		"short_sha":     payload.ShortSHA,
-		"ref":           payload.Ref,
+		"operation":        "send_event",
+		"event_id":         event.ID,
+		"status_code":      statusCode,
+		"duration":         result.Duration,
+		"short_sha":        payload.Data.Commit.ShortSHA,
+		"ref":              payload.Data.Branch.Ref,
+		"cloudevents_id":   payload.ID,
+		"cloudevents_type": payload.Type,
 	}).Info("Successfully sent event to Tekton EventListener")
 
 	return result, nil
@@ -143,11 +148,11 @@ func (t *TektonTrigger) SendEvent(ctx context.Context, event types.Event) (*Trig
 func (t *TektonTrigger) BatchSendEvents(ctx context.Context, events []types.Event) (*BatchTriggerResult, error) {
 	startTime := time.Now()
 	batchID := fmt.Sprintf("batch_%d_%d", startTime.Unix(), len(events))
-	
+
 	t.logger.WithFields(logger.Fields{
-		"operation":    "batch_send_events",
-		"batch_id":     batchID,
-		"event_count":  len(events),
+		"operation":   "batch_send_events",
+		"batch_id":    batchID,
+		"event_count": len(events),
 	}).Info("Starting batch event send to Tekton EventListener")
 
 	result := &BatchTriggerResult{
@@ -160,15 +165,15 @@ func (t *TektonTrigger) BatchSendEvents(ctx context.Context, events []types.Even
 	// Send events concurrently with semaphore to limit concurrent requests
 	semaphore := make(chan struct{}, 5) // Max 5 concurrent requests
 	resultChan := make(chan TriggerResult, len(events))
-	
+
 	var wg sync.WaitGroup
 	for _, event := range events {
 		wg.Add(1)
 		go func(e types.Event) {
 			defer wg.Done()
-			semaphore <- struct{}{} // Acquire
+			semaphore <- struct{}{}        // Acquire
 			defer func() { <-semaphore }() // Release
-			
+
 			eventResult, _ := t.SendEvent(ctx, e)
 			resultChan <- *eventResult
 		}(event)
@@ -191,7 +196,7 @@ func (t *TektonTrigger) BatchSendEvents(ctx context.Context, events []types.Even
 	}
 
 	result.Duration = time.Since(startTime)
-	
+
 	// Add batch metadata
 	result.Metadata = map[string]string{
 		"tekton_namespace": t.config.Tekton.Namespace,
@@ -200,12 +205,12 @@ func (t *TektonTrigger) BatchSendEvents(ctx context.Context, events []types.Even
 	}
 
 	t.logger.WithFields(logger.Fields{
-		"operation":      "batch_send_events",
-		"batch_id":       batchID,
-		"total_events":   result.TotalEvents,
-		"success_count":  result.SuccessCount,
-		"failure_count":  result.FailureCount,
-		"duration":       result.Duration,
+		"operation":     "batch_send_events",
+		"batch_id":      batchID,
+		"total_events":  result.TotalEvents,
+		"success_count": result.SuccessCount,
+		"failure_count": result.FailureCount,
+		"duration":      result.Duration,
 	}).Info("Completed batch event send to Tekton EventListener")
 
 	return result, nil
@@ -268,7 +273,7 @@ func (t *TektonTrigger) HealthCheck(ctx context.Context) error {
 func (t *TektonTrigger) GetMetrics() TriggerMetrics {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	
+
 	metrics := t.metrics
 	metrics.Uptime = time.Since(t.startTime)
 	return metrics
@@ -290,7 +295,7 @@ func (t *TektonTrigger) Close() error {
 }
 
 // sendHTTPRequest sends HTTP request to Tekton EventListener
-func (t *TektonTrigger) sendHTTPRequest(ctx context.Context, payload TektonPayload) (int, string, error) {
+func (t *TektonTrigger) sendHTTPRequest(ctx context.Context, payload interface{}) (int, string, error) {
 	// Marshal payload to JSON
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -300,7 +305,6 @@ func (t *TektonTrigger) sendHTTPRequest(ctx context.Context, payload TektonPaylo
 	t.logger.WithFields(logger.Fields{
 		"operation":    "send_http_request",
 		"payload_size": len(payloadBytes),
-		"event_id":     payload.EventID,
 	}).Debug("Sending HTTP request to Tekton EventListener")
 
 	// Create request
@@ -353,7 +357,7 @@ func (t *TektonTrigger) sendHTTPRequest(ctx context.Context, payload TektonPaylo
 func (t *TektonTrigger) addHeaders(req *http.Request) {
 	// Add GitHub-style event header
 	req.Header.Set("X-GitHub-Event", "push")
-	
+
 	// Add custom headers from configuration
 	for key, value := range t.config.Tekton.Headers {
 		req.Header.Set(key, value)
@@ -374,7 +378,7 @@ func (t *TektonTrigger) updateMetrics(success bool, duration time.Duration) {
 	defer t.mu.Unlock()
 
 	t.metrics.TotalRequests++
-	
+
 	if success {
 		t.metrics.SuccessfulSends++
 		t.metrics.LastSuccessTime = time.Now()

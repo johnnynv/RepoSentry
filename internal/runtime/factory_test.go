@@ -2,7 +2,9 @@ package runtime
 
 import (
 	"testing"
+	"time"
 
+	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
 )
 
@@ -23,8 +25,15 @@ func TestDefaultRuntimeFactory_CreateRuntime(t *testing.T) {
 				},
 				Storage: types.StorageConfig{
 					SQLite: types.SQLiteConfig{
-						Path: ":memory:",
+						Path: "/tmp/test-reposentry-factory.db",
 					},
+				},
+				Polling: types.PollingConfig{
+					Interval: 1 * time.Minute,
+				},
+				Tekton: types.TektonConfig{
+					EventListenerURL: "http://localhost:8080/webhook",
+					Timeout:          10 * time.Second,
 				},
 				Repositories: []types.Repository{
 					{
@@ -122,7 +131,14 @@ func TestDefaultRuntimeFactory_CreateRuntime(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runtime, err := factory.CreateRuntime(tt.config)
+			// Create a test logger manager for factory
+			loggerManager, _ := logger.NewManager(logger.Config{
+				Level:  "error",
+				Format: "json",
+				Output: "stderr",
+			})
+
+			runtime, err := factory.CreateRuntime(tt.config, loggerManager)
 
 			if tt.wantErr {
 				if err == nil {

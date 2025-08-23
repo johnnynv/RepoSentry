@@ -3,8 +3,10 @@ package gitclient
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
+	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
 )
 
@@ -12,57 +14,64 @@ import (
 type GitClient interface {
 	// GetBranches retrieves all branches for a repository
 	GetBranches(ctx context.Context, repo types.Repository) ([]types.Branch, error)
-	
+
 	// GetLatestCommit retrieves the latest commit SHA for a branch
 	GetLatestCommit(ctx context.Context, repo types.Repository, branch string) (string, error)
-	
+
 	// CheckPermissions verifies if the client has access to the repository
 	CheckPermissions(ctx context.Context, repo types.Repository) error
-	
+
 	// GetRateLimit returns current rate limit status
 	GetRateLimit(ctx context.Context) (*types.RateLimit, error)
-	
+
 	// GetProvider returns the provider name
 	GetProvider() string
-	
+
 	// Close releases any resources
 	Close() error
 }
 
 // ClientConfig represents common configuration for Git clients
 type ClientConfig struct {
-	Token           string        `json:"-"` // Hidden for security
-	BaseURL         string        `json:"base_url,omitempty"`
-	Timeout         time.Duration `json:"timeout"`
-	RetryAttempts   int           `json:"retry_attempts"`
-	RetryBackoff    time.Duration `json:"retry_backoff"`
-	UserAgent       string        `json:"user_agent"`
-	EnableFallback  bool          `json:"enable_fallback"`
+	Token          string        `json:"-"` // Hidden for security
+	BaseURL        string        `json:"base_url,omitempty"`
+	RepositoryURL  string        `json:"repository_url,omitempty"` // For auto-detecting API URLs
+	Timeout        time.Duration `json:"timeout"`
+	RetryAttempts  int           `json:"retry_attempts"`
+	RetryBackoff   time.Duration `json:"retry_backoff"`
+	UserAgent      string        `json:"user_agent"`
+	EnableFallback bool          `json:"enable_fallback"`
 }
 
 // ClientFactory creates Git clients based on provider
 type ClientFactory struct {
+	mu           sync.RWMutex
 	rateLimiters map[string]RateLimiter
 	fallback     *FallbackClient
+	logger       *logger.Entry
 }
 
 // NewClientFactory creates a new client factory
-func NewClientFactory() *ClientFactory {
+func NewClientFactory(parentLogger *logger.Entry) *ClientFactory {
 	return &ClientFactory{
 		rateLimiters: make(map[string]RateLimiter),
-		fallback:     NewFallbackClient(),
+		fallback:     NewFallbackClient(parentLogger),
+		logger:       parentLogger,
 	}
 }
 
 // CreateClient creates a client for the specified repository
 func (f *ClientFactory) CreateClient(repo types.Repository, config ClientConfig) (GitClient, error) {
+	// Set repository URL for auto-detection
+	config.RepositoryURL = repo.URL
+
 	switch repo.Provider {
 	case "github":
 		rateLimiter := f.getRateLimiter("github", NewGitHubRateLimiter())
-		return NewGitHubClient(config, rateLimiter, f.fallback)
+		return NewGitHubClient(config, rateLimiter, f.fallback, f.logger)
 	case "gitlab":
 		rateLimiter := f.getRateLimiter("gitlab", NewGitLabRateLimiter())
-		return NewGitLabClient(config, rateLimiter, f.fallback)
+		return NewGitLabClient(config, rateLimiter, f.fallback, f.logger)
 	default:
 		return nil, &UnsupportedProviderError{Provider: repo.Provider}
 	}
@@ -70,6 +79,9 @@ func (f *ClientFactory) CreateClient(repo types.Repository, config ClientConfig)
 
 // getRateLimiter returns or creates a rate limiter for a provider
 func (f *ClientFactory) getRateLimiter(provider string, defaultLimiter RateLimiter) RateLimiter {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if limiter, exists := f.rateLimiters[provider]; exists {
 		return limiter
 	}
@@ -110,7 +122,7 @@ type RateLimitExceededError struct {
 }
 
 func (e *RateLimitExceededError) Error() string {
-	return fmt.Sprintf("rate limit exceeded for %s, resets at %s", 
+	return fmt.Sprintf("rate limit exceeded for %s, resets at %s",
 		e.Provider, e.ResetTime.Format(time.RFC3339))
 }
 

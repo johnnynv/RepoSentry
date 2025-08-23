@@ -10,11 +10,9 @@ import (
 	"github.com/johnnynv/RepoSentry/internal/config"
 	"github.com/johnnynv/RepoSentry/internal/storage"
 	"github.com/johnnynv/RepoSentry/pkg/logger"
-	
+	"github.com/johnnynv/RepoSentry/pkg/types"
 	// Note: httpSwagger is imported in router.go
 )
-
-
 
 // Server represents the HTTP API server
 type Server struct {
@@ -27,13 +25,13 @@ type Server struct {
 }
 
 // NewServer creates a new API server
-func NewServer(port int, configManager *config.Manager, storage storage.Storage) *Server {
+func NewServer(port int, configManager *config.Manager, storage storage.Storage, parentLogger *logger.Entry) *Server {
 	return &Server{
 		port:          port,
 		configManager: configManager,
 		storage:       storage,
 		runtime:       nil, // Will be set by SetRuntime
-		logger: logger.GetDefaultLogger().WithFields(logger.Fields{
+		logger: parentLogger.WithFields(logger.Fields{
 			"component": "api",
 			"module":    "server",
 			"port":      port,
@@ -50,7 +48,7 @@ func (s *Server) SetRuntime(runtime RuntimeProvider) {
 func (s *Server) Start(ctx context.Context) error {
 	// Create router with all handlers
 	router := s.setupRouter()
-	
+
 	s.server = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.port),
 		Handler:      router,
@@ -122,7 +120,7 @@ func (s *Server) Health(ctx context.Context) error {
 // @Router /health [get]
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	
+
 	if s.runtime != nil {
 		health := s.runtime.Health(ctx)
 		response := NewJSONResponse(health)
@@ -184,7 +182,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		response.Write(w)
 	} else {
 		status := map[string]interface{}{
-			"status": "running",
+			"status":  "running",
 			"message": "Runtime information not available",
 		}
 		response := NewJSONResponse(status)
@@ -202,10 +200,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 // @Router /api/repositories [get]
 func (s *Server) handleRepositories(w http.ResponseWriter, r *http.Request) {
 	repos := s.configManager.GetRepositories()
-	
+
+	// Convert to API format with time in seconds
+	apiRepos := make([]map[string]interface{}, len(repos))
+	for i, repo := range repos {
+		apiRepos[i] = s.convertRepositoryToAPI(repo)
+	}
+
 	response := NewJSONResponse(map[string]interface{}{
-		"total":        len(repos),
-		"repositories": repos,
+		"total":        len(apiRepos),
+		"repositories": apiRepos,
 	})
 	response.Write(w)
 }
@@ -219,16 +223,44 @@ func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
 		response.WriteWithStatus(w, http.StatusBadRequest)
 		return
 	}
-	
+
 	repo, found := s.configManager.GetRepository(path)
 	if !found {
 		response := NewErrorResponse("Repository not found")
 		response.WriteWithStatus(w, http.StatusNotFound)
 		return
 	}
-	
-	response := NewJSONResponse(repo)
+
+	// Convert to API format with time in seconds
+	apiRepo := s.convertRepositoryToAPI(*repo)
+
+	response := NewJSONResponse(apiRepo)
 	response.Write(w)
+}
+
+// convertRepositoryToAPI converts a Repository to API format with time in seconds
+func (s *Server) convertRepositoryToAPI(repo types.Repository) map[string]interface{} {
+	apiRepo := map[string]interface{}{
+		"name":         repo.Name,
+		"url":          repo.URL,
+		"provider":     repo.Provider,
+		"branch_regex": repo.BranchRegex,
+		"enabled":      repo.Enabled,
+	}
+
+	// Convert polling interval to seconds
+	if repo.PollingInterval > 0 {
+		seconds := int(repo.PollingInterval.Seconds())
+		apiRepo["polling_interval_seconds"] = seconds
+		apiRepo["polling_interval"] = fmt.Sprintf("%ds", seconds)
+	}
+
+	// Add API base URL if present
+	if repo.APIBaseURL != "" {
+		apiRepo["api_base_url"] = repo.APIBaseURL
+	}
+
+	return apiRepo
 }
 
 // handleEvents returns events with pagination
@@ -243,7 +275,7 @@ func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request) {
 // @Router /api/events [get]
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	
+
 	// Parse query parameters
 	limit := 100 // default
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
@@ -251,14 +283,14 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			limit = l
 		}
 	}
-	
+
 	offset := 0
 	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
 		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
 			offset = o
 		}
 	}
-	
+
 	events, err := s.storage.GetEvents(ctx, limit, offset)
 	if err != nil {
 		s.logger.WithFields(logger.Fields{
@@ -266,12 +298,12 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			"limit":  limit,
 			"offset": offset,
 		}).Error("Failed to get events")
-		
+
 		response := NewErrorResponse("Failed to retrieve events")
 		response.WriteWithStatus(w, http.StatusInternalServerError)
 		return
 	}
-	
+
 	response := NewJSONResponse(map[string]interface{}{
 		"total":  len(events),
 		"limit":  limit,
@@ -284,7 +316,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 // handleRecentEvents returns recent events (last 24 hours)
 func (s *Server) handleRecentEvents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	
+
 	since := time.Now().Add(-24 * time.Hour)
 	events, err := s.storage.GetEventsSince(ctx, since)
 	if err != nil {
@@ -292,12 +324,12 @@ func (s *Server) handleRecentEvents(w http.ResponseWriter, r *http.Request) {
 			"error": err.Error(),
 			"since": since,
 		}).Error("Failed to get recent events")
-		
+
 		response := NewErrorResponse("Failed to retrieve recent events")
 		response.WriteWithStatus(w, http.StatusInternalServerError)
 		return
 	}
-	
+
 	response := NewJSONResponse(map[string]interface{}{
 		"total":  len(events),
 		"since":  since,
@@ -309,7 +341,7 @@ func (s *Server) handleRecentEvents(w http.ResponseWriter, r *http.Request) {
 // handleEvent returns a specific event by ID
 func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	
+
 	// Extract event ID from URL path
 	path := r.URL.Path[len("/api/events/"):]
 	if path == "" || path == "recent" {
@@ -317,19 +349,19 @@ func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
 		response.WriteWithStatus(w, http.StatusBadRequest)
 		return
 	}
-	
+
 	event, err := s.storage.GetEvent(ctx, path)
 	if err != nil {
 		s.logger.WithFields(logger.Fields{
 			"error":    err.Error(),
 			"event_id": path,
 		}).Error("Failed to get event")
-		
+
 		response := NewErrorResponse("Event not found")
 		response.WriteWithStatus(w, http.StatusNotFound)
 		return
 	}
-	
+
 	response := NewJSONResponse(event)
 	response.Write(w)
 }
@@ -357,7 +389,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 			"requests_total": "N/A", // TODO: Add metrics collection
 		},
 	}
-	
+
 	response := NewJSONResponse(metrics)
 	response.Write(w)
 }

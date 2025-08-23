@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-
 	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
 )
@@ -21,8 +20,8 @@ type FallbackClient struct {
 }
 
 // NewFallbackClient creates a new fallback client
-func NewFallbackClient() *FallbackClient {
-	clientLogger := logger.GetDefaultLogger().WithFields(logger.Fields{
+func NewFallbackClient(parentLogger *logger.Entry) *FallbackClient {
+	clientLogger := parentLogger.WithFields(logger.Fields{
 		"component": "gitclient",
 		"provider":  "git-fallback",
 	})
@@ -38,9 +37,9 @@ func NewFallbackClient() *FallbackClient {
 // GetBranches retrieves branches using git ls-remote
 func (f *FallbackClient) GetBranches(ctx context.Context, repo types.Repository) ([]types.Branch, error) {
 	f.logger.WithFields(logger.Fields{
-		"operation": "get_branches",
+		"operation":  "get_branches",
 		"repository": repo.Name,
-		"url": repo.URL,
+		"url":        repo.URL,
 	}).Info("Starting fallback branch retrieval using git ls-remote")
 
 	ctx, cancel := context.WithTimeout(ctx, f.timeout)
@@ -48,32 +47,32 @@ func (f *FallbackClient) GetBranches(ctx context.Context, repo types.Repository)
 
 	// Use git ls-remote to list branches
 	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--heads", repo.URL)
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		f.logger.WithError(err).WithFields(logger.Fields{
-			"operation": "get_branches",
+			"operation":  "get_branches",
 			"repository": repo.Name,
-			"url": repo.URL,
+			"url":        repo.URL,
 		}).Error("Git ls-remote command failed")
 		return nil, &NetworkError{
-			Provider: "git-fallback", 
-			Err: fmt.Errorf("git ls-remote failed: %w", err),
+			Provider: "git-fallback",
+			Err:      fmt.Errorf("git ls-remote failed: %w", err),
 		}
 	}
 
 	branches, err := f.parseLsRemoteOutput(string(output))
 	if err != nil {
 		f.logger.WithError(err).WithFields(logger.Fields{
-			"operation": "get_branches",
+			"operation":  "get_branches",
 			"repository": repo.Name,
 		}).Error("Failed to parse git ls-remote output")
 		return nil, err
 	}
 
 	f.logger.WithFields(logger.Fields{
-		"operation": "get_branches",
-		"repository": repo.Name,
+		"operation":    "get_branches",
+		"repository":   repo.Name,
 		"branch_count": len(branches),
 	}).Info("Successfully retrieved branches using git fallback")
 
@@ -88,12 +87,12 @@ func (f *FallbackClient) GetLatestCommit(ctx context.Context, repo types.Reposit
 	// Use git ls-remote to get specific branch
 	refName := fmt.Sprintf("refs/heads/%s", branch)
 	cmd := exec.CommandContext(ctx, "git", "ls-remote", repo.URL, refName)
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return "", &NetworkError{
-			Provider: "git-fallback", 
-			Err: fmt.Errorf("git ls-remote failed for branch %s: %w", branch, err),
+			Provider: "git-fallback",
+			Err:      fmt.Errorf("git ls-remote failed for branch %s: %w", branch, err),
 		}
 	}
 
@@ -121,7 +120,7 @@ func (f *FallbackClient) CheckPermissions(ctx context.Context, repo types.Reposi
 
 	// Try to list remote references
 	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--exit-code", repo.URL)
-	
+
 	if err := cmd.Run(); err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			switch exitError.ExitCode() {
@@ -286,10 +285,10 @@ func GetRemoteInfo(ctx context.Context, repoURL string) (map[string]string, erro
 
 	info := make(map[string]string)
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	
+
 	branchCount := 0
 	tagCount := 0
-	
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.Contains(line, "refs/heads/") {
@@ -302,6 +301,6 @@ func GetRemoteInfo(ctx context.Context, repoURL string) (map[string]string, erro
 	info["branches"] = fmt.Sprintf("%d", branchCount)
 	info["tags"] = fmt.Sprintf("%d", tagCount)
 	info["url"] = repoURL
-	
+
 	return info, nil
 }

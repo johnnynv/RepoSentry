@@ -9,7 +9,7 @@ import (
 type RuntimeHealthStatus struct {
 	Healthy    bool                       `json:"healthy"`
 	Components map[string]ComponentHealth `json:"components"`
-	Checks     []HealthCheck             `json:"checks"`
+	Checks     []HealthCheck              `json:"checks"`
 }
 
 // ComponentHealth represents individual component health
@@ -27,11 +27,11 @@ type HealthCheck struct {
 
 // RuntimeStatus represents runtime status
 type RuntimeStatus struct {
-	State      string                         `json:"state"`
-	StartedAt  time.Time                     `json:"started_at"`
-	Uptime     time.Duration                 `json:"uptime"`
-	Version    string                        `json:"version"`
-	Components map[string]ComponentStatus    `json:"components"`
+	State      string                     `json:"state"`
+	StartedAt  time.Time                  `json:"started_at"`
+	Uptime     time.Duration              `json:"uptime"`
+	Version    string                     `json:"version"`
+	Components map[string]ComponentStatus `json:"components"`
 }
 
 // ComponentStatus represents individual component status

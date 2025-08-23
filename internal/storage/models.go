@@ -58,19 +58,19 @@ type RepositoryState struct {
 
 // SQLiteEvent represents event in SQLite
 type SQLiteEvent struct {
-	ID          string         `db:"id"`
-	Type        string         `db:"type"`
-	Repository  string         `db:"repository"`
-	Branch      string         `db:"branch"`
-	CommitSHA   string         `db:"commit_sha"`
-	PrevCommit  string         `db:"prev_commit"`
-	Provider    string         `db:"provider"`
-	Timestamp   time.Time      `db:"timestamp"`
-	Metadata    MetadataJSON   `db:"metadata"`
-	Status      string         `db:"status"`
-	ProcessedAt *time.Time     `db:"processed_at"`
-	CreatedAt   time.Time      `db:"created_at"`
-	UpdatedAt   time.Time      `db:"updated_at"`
+	ID          string       `db:"id"`
+	Type        string       `db:"type"`
+	Repository  string       `db:"repository"`
+	Branch      string       `db:"branch"`
+	CommitSHA   string       `db:"commit_sha"`
+	PrevCommit  string       `db:"prev_commit"`
+	Provider    string       `db:"provider"`
+	Timestamp   time.Time    `db:"timestamp"`
+	Metadata    MetadataJSON `db:"metadata"`
+	Status      string       `db:"status"`
+	ProcessedAt *time.Time   `db:"processed_at"`
+	CreatedAt   time.Time    `db:"created_at"`
+	UpdatedAt   time.Time    `db:"updated_at"`
 }
 
 // ToEvent converts SQLiteEvent to types.Event
@@ -117,12 +117,12 @@ func (m MetadataJSON) Value() (driver.Value, error) {
 	if m == nil {
 		return nil, nil
 	}
-	
+
 	data, err := json.Marshal(m)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
-	
+
 	return string(data), nil
 }
 
@@ -132,7 +132,7 @@ func (m *MetadataJSON) Scan(value interface{}) error {
 		*m = make(map[string]string)
 		return nil
 	}
-	
+
 	var data []byte
 	switch v := value.(type) {
 	case []byte:
@@ -142,17 +142,17 @@ func (m *MetadataJSON) Scan(value interface{}) error {
 	default:
 		return fmt.Errorf("cannot scan %T into MetadataJSON", value)
 	}
-	
+
 	if len(data) == 0 {
 		*m = make(map[string]string)
 		return nil
 	}
-	
+
 	var result map[string]string
 	if err := json.Unmarshal(data, &result); err != nil {
 		return fmt.Errorf("failed to unmarshal metadata: %w", err)
 	}
-	
+
 	*m = MetadataJSON(result)
 	return nil
 }

@@ -17,7 +17,7 @@ type Manager struct {
 	validator *Validator
 	logger    *logger.Logger
 	mu        sync.RWMutex
-	
+
 	// Configuration file path for hot reload
 	configPath string
 }
@@ -40,8 +40,8 @@ func (m *Manager) Load(configPath string) error {
 		WithField("path", configPath).
 		Info("Loading configuration")
 
-	// Load configuration
-	config, err := m.loader.LoadFromFile(configPath)
+	// Load configuration with repositories support
+	config, err := m.loader.LoadWithDefaults(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -105,11 +105,11 @@ func (m *Manager) LoadWithDefaults(configPath string) error {
 func (m *Manager) Get() *types.Config {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	if m.config == nil {
 		return nil
 	}
-	
+
 	// Return a copy to prevent external modifications
 	configCopy := *m.config
 	return &configCopy
@@ -119,18 +119,18 @@ func (m *Manager) Get() *types.Config {
 func (m *Manager) GetRepositories() []types.Repository {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	if m.config == nil {
 		return nil
 	}
-	
+
 	var enabled []types.Repository
 	for _, repo := range m.config.Repositories {
 		if repo.Enabled {
 			enabled = append(enabled, repo)
 		}
 	}
-	
+
 	return enabled
 }
 
@@ -138,17 +138,17 @@ func (m *Manager) GetRepositories() []types.Repository {
 func (m *Manager) GetRepository(name string) (*types.Repository, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	if m.config == nil {
 		return nil, false
 	}
-	
+
 	for _, repo := range m.config.Repositories {
 		if repo.Name == name {
 			return &repo, true
 		}
 	}
-	
+
 	return nil, false
 }
 
@@ -160,10 +160,10 @@ func (m *Manager) Reload() error {
 			Debug("No configuration file path set for reload")
 		return nil
 	}
-	
+
 	m.logger.WithComponent("config").
 		Info("Reloading configuration")
-	
+
 	return m.Load(m.configPath)
 }
 
@@ -181,18 +181,18 @@ func (m *Manager) Validate(configPath string) error {
 func (m *Manager) CheckPermissions() error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	if m.config == nil {
 		return fmt.Errorf("configuration not loaded")
 	}
 
 	var missingTokens []string
-	
+
 	for _, repo := range m.config.Repositories {
 		if !repo.Enabled {
 			continue
 		}
-		
+
 		// Check if token is an environment variable reference
 		if repo.Token == "" || (len(repo.Token) > 3 && repo.Token[:2] == "${" && repo.Token[len(repo.Token)-1:] == "}") {
 			// Extract variable name and check if it's set
@@ -206,11 +206,11 @@ func (m *Manager) CheckPermissions() error {
 			}
 		}
 	}
-	
+
 	if len(missingTokens) > 0 {
 		return fmt.Errorf("missing required tokens: %v", missingTokens)
 	}
-	
+
 	return nil
 }
 
@@ -221,6 +221,19 @@ func (m *Manager) GetConfigPath() string {
 	return m.configPath
 }
 
+// SetConfig sets the configuration directly (for runtime initialization)
+func (m *Manager) SetConfig(config *types.Config) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.config = config
+	// Don't set configPath for programmatically set configs
+
+	m.logger.WithComponent("config").
+		WithField("repositories", len(config.Repositories)).
+		Info("Configuration set programmatically")
+}
+
 // ensureDataDirectory creates the data directory if it doesn't exist
 func (m *Manager) ensureDataDirectory(dataDir string) error {
 	// Create absolute path
@@ -228,12 +241,12 @@ func (m *Manager) ensureDataDirectory(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	// Create directory with proper permissions
 	if err := os.MkdirAll(absPath, 0755); err != nil {
 		return err
 	}
-	
+
 	// Verify it's writable
 	testFile := filepath.Join(absPath, ".write_test")
 	file, err := os.Create(testFile)
@@ -242,7 +255,7 @@ func (m *Manager) ensureDataDirectory(dataDir string) error {
 	}
 	file.Close()
 	os.Remove(testFile)
-	
+
 	return nil
 }
 
@@ -250,7 +263,7 @@ func (m *Manager) ensureDataDirectory(dataDir string) error {
 func (m *Manager) GetLoggerConfig() logger.Config {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	if m.config == nil {
 		return logger.Config{
 			Level:  "info",
@@ -258,10 +271,24 @@ func (m *Manager) GetLoggerConfig() logger.Config {
 			Output: "stdout",
 		}
 	}
-	
-	return logger.Config{
+
+	// Use configuration file settings
+	logConfig := logger.Config{
 		Level:  m.config.App.LogLevel,
 		Format: m.config.App.LogFormat,
-		Output: "stdout", // Always output to stdout for now
+		Output: "stdout", // Default to stdout
 	}
+
+	// Set file output if configured
+	if m.config.App.LogFile != "" {
+		logConfig.Output = m.config.App.LogFile
+		logConfig.File = logger.FileConfig{
+			MaxSize:    m.config.App.LogFileRotation.MaxSize,
+			MaxBackups: m.config.App.LogFileRotation.MaxBackups,
+			MaxAge:     m.config.App.LogFileRotation.MaxAge,
+			Compress:   m.config.App.LogFileRotation.Compress,
+		}
+	}
+
+	return logConfig
 }

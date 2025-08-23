@@ -11,15 +11,15 @@ import (
 
 // RepositoryInfo represents parsed repository information
 type RepositoryInfo struct {
-	Provider        string `json:"provider"`         // "github" or "gitlab"
-	Instance        string `json:"instance"`         // "github.com", "gitlab-master.nvidia.com"
-	Namespace       string `json:"namespace"`        // "owner" or "group/subgroup"
-	ProjectName     string `json:"project_name"`     // "repo"
-	FullName        string `json:"full_name"`        // "owner/repo" or "group/subgroup/repo"
-	CloneURL        string `json:"clone_url"`        // Original or normalized clone URL
-	HTMLURL         string `json:"html_url"`         // Web URL
-	APIBaseURL      string `json:"api_base_url"`     // API base URL
-	IsEnterprise    bool   `json:"is_enterprise"`    // Whether it's enterprise instance
+	Provider     string `json:"provider"`      // "github" or "gitlab"
+	Instance     string `json:"instance"`      // "github.com", "gitlab-master.nvidia.com"
+	Namespace    string `json:"namespace"`     // "owner" or "group/subgroup"
+	ProjectName  string `json:"project_name"`  // "repo"
+	FullName     string `json:"full_name"`     // "owner/repo" or "group/subgroup/repo"
+	CloneURL     string `json:"clone_url"`     // Original or normalized clone URL
+	HTMLURL      string `json:"html_url"`      // Web URL
+	APIBaseURL   string `json:"api_base_url"`  // API base URL
+	IsEnterprise bool   `json:"is_enterprise"` // Whether it's enterprise instance
 }
 
 // URLParser provides intelligent URL parsing for Git repositories
@@ -28,9 +28,9 @@ type URLParser struct {
 }
 
 // NewURLParser creates a new URL parser
-func NewURLParser() *URLParser {
+func NewURLParser(parentLogger *logger.Entry) *URLParser {
 	return &URLParser{
-		logger: logger.GetDefaultLogger().WithFields(logger.Fields{
+		logger: parentLogger.WithFields(logger.Fields{
 			"component": "trigger",
 			"module":    "url_parser",
 		}),
@@ -39,6 +39,9 @@ func NewURLParser() *URLParser {
 
 // ParseRepositoryURL parses a repository URL and extracts provider information
 func (p *URLParser) ParseRepositoryURL(repoURL string) (*RepositoryInfo, error) {
+	// Trim whitespace from URL for robustness
+	repoURL = strings.TrimSpace(repoURL)
+
 	p.logger.WithFields(logger.Fields{
 		"operation": "parse_repository_url",
 		"url":       repoURL,
@@ -67,10 +70,10 @@ func (p *URLParser) ParseRepositoryURL(repoURL string) (*RepositoryInfo, error) 
 
 	// Normalize URL (remove .git suffix, HTTPS only)
 	normalizedURL := p.normalizeURL(parsedURL)
-	
+
 	// Detect provider type
 	provider := p.detectProvider(normalizedURL.Host)
-	
+
 	// Parse path components
 	namespace, projectName, err := p.parseRepoPath(normalizedURL.Path)
 	if err != nil {
@@ -141,7 +144,7 @@ func (p *URLParser) detectProvider(hostname string) string {
 		return "github"
 	}
 
-	// GitLab detection  
+	// GitLab detection
 	if hostname == "gitlab.com" || strings.Contains(hostname, "gitlab") {
 		return "gitlab"
 	}
@@ -172,7 +175,7 @@ func (p *URLParser) parseRepoPath(repoPath string) (namespace, projectName strin
 
 	// Last part is always project name
 	projectName = parts[len(parts)-1]
-	
+
 	// Everything before last part is namespace
 	if len(parts) > 1 {
 		namespaceParts := parts[:len(parts)-1]
@@ -185,13 +188,13 @@ func (p *URLParser) parseRepoPath(repoPath string) (namespace, projectName strin
 // isEnterpriseInstance determines if the instance is enterprise/self-hosted
 func (p *URLParser) isEnterpriseInstance(hostname, provider string) bool {
 	hostname = strings.ToLower(hostname)
-	
+
 	// Public instances
 	publicInstances := map[string]bool{
 		"github.com": true,
 		"gitlab.com": true,
 	}
-	
+
 	return !publicInstances[hostname]
 }
 
@@ -235,6 +238,9 @@ func (p *URLParser) ValidateRepositoryURL(repoURL string) error {
 
 // GetProviderType extracts just the provider type from URL (quick operation)
 func (p *URLParser) GetProviderType(repoURL string) string {
+	// Trim whitespace for robustness
+	repoURL = strings.TrimSpace(repoURL)
+
 	// Validate URL format first
 	if err := p.validateURLFormat(repoURL); err != nil {
 		p.logger.WithFields(logger.Fields{
@@ -254,7 +260,7 @@ func (p *URLParser) GetProviderType(repoURL string) string {
 		}).Error("Failed to parse URL for provider detection")
 		return "unknown"
 	}
-	
+
 	return p.detectProvider(parsedURL.Host)
 }
 
@@ -262,14 +268,14 @@ func (p *URLParser) GetProviderType(repoURL string) string {
 func (p *URLParser) BuildRepoURLs(instance, fullName, provider string) *RepositoryInfo {
 	// Construct normalized URL
 	baseURL := fmt.Sprintf("https://%s/%s", instance, fullName)
-	
+
 	// Parse to get full info
 	repoInfo, _ := p.ParseRepositoryURL(baseURL)
 	if repoInfo == nil {
 		// Fallback construction
 		namespace, projectName := path.Split(fullName)
 		namespace = strings.Trim(namespace, "/")
-		
+
 		repoInfo = &RepositoryInfo{
 			Provider:     provider,
 			Instance:     instance,
@@ -282,12 +288,15 @@ func (p *URLParser) BuildRepoURLs(instance, fullName, provider string) *Reposito
 			IsEnterprise: p.isEnterpriseInstance(instance, provider),
 		}
 	}
-	
+
 	return repoInfo
 }
 
 // validateURLFormat validates that URL meets our strict requirements
 func (p *URLParser) validateURLFormat(repoURL string) error {
+	// Trim whitespace for robustness
+	repoURL = strings.TrimSpace(repoURL)
+
 	if repoURL == "" {
 		return fmt.Errorf("repository URL cannot be empty")
 	}

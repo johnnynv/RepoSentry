@@ -1,0 +1,178 @@
+# RepoSentry 测试专用的 Tekton Task
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: reposentry-test-task
+  namespace: tekton-pipelines
+spec:
+  description: "RepoSentry 端到端测试用 Task，处理来自 Git 仓库的 webhook 事件"
+  params:
+    - name: repo-name
+      description: "仓库名称"
+      type: string
+      default: "unknown"
+    - name: repo-url
+      description: "仓库 URL"
+      type: string
+      default: ""
+    - name: branch
+      description: "分支名称"
+      type: string
+      default: "main"
+    - name: commit-sha
+      description: "提交 SHA"
+      type: string
+      default: ""
+    - name: event-type
+      description: "事件类型"
+      type: string
+      default: "push"
+    - name: provider
+      description: "Git 提供商 (github/gitlab)"
+      type: string
+      default: "github"
+    - name: reposentry-event-id
+      description: "RepoSentry 事件 ID"
+      type: string
+      default: ""
+    - name: reposentry-timestamp
+      description: "RepoSentry 时间戳"
+      type: string
+      default: ""
+  steps:
+    - name: validate-webhook-data
+      image: cgr.dev/chainguard/bash:latest
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+        capabilities:
+          drop:
+            - "ALL"
+        seccompProfile:
+          type: "RuntimeDefault"
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "🚀 ==========================="
+        echo "   RepoSentry 端到端测试"
+        echo "==========================="
+        echo "📦 仓库信息:"
+        echo "  名称: $(params.repo-name)"
+        echo "  URL: $(params.repo-url)"
+        echo "  分支: $(params.branch)"
+        echo "  提交: $(params.commit-sha)"
+        echo "  事件类型: $(params.event-type)"
+        echo "  提供商: $(params.provider)"
+        echo ""
+        echo "🔍 RepoSentry 元数据:"
+        echo "  事件ID: $(params.reposentry-event-id)"
+        echo "  时间戳: $(params.reposentry-timestamp)"
+        echo ""
+        echo "⏰ 系统信息:"
+        echo "  执行时间: $(date)"
+        echo "  主机名: $(hostname)"
+        echo "  用户: $(whoami)"
+        echo ""
+        
+        # 验证必要参数
+        if [ "$(params.repo-name)" = "unknown" ]; then
+          echo "❌ 错误: 缺少仓库名称"
+          exit 1
+        fi
+        
+        if [ -z "$(params.repo-url)" ]; then
+          echo "❌ 错误: 缺少仓库URL"
+          exit 1
+        fi
+        
+        echo "✅ 所有参数验证通过!"
+        
+    - name: simulate-ci-process
+      image: cgr.dev/chainguard/bash:latest
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+        capabilities:
+          drop:
+            - "ALL"
+        seccompProfile:
+          type: "RuntimeDefault"
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "🔨 模拟 CI/CD 流程..."
+        echo "  正在处理 $(params.provider) 仓库: $(params.repo-name)"
+        echo "  分支: $(params.branch)"
+        echo "  提交: $(params.commit-sha)"
+        
+        # 模拟一些 CI/CD 操作
+        echo "  ⏳ 步骤 1: 代码检出"
+        sleep 2
+        echo "  ✅ 代码检出完成"
+        
+        echo "  ⏳ 步骤 2: 依赖安装"
+        sleep 1
+        echo "  ✅ 依赖安装完成"
+        
+        echo "  ⏳ 步骤 3: 运行测试"
+        sleep 2
+        echo "  ✅ 测试通过"
+        
+        echo "  ⏳ 步骤 4: 构建应用"
+        sleep 1
+        echo "  ✅ 构建完成"
+        
+        echo "🎉 CI/CD 流程成功完成!"
+        
+    - name: record-result
+      image: cgr.dev/chainguard/bash:latest
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+        capabilities:
+          drop:
+            - "ALL"
+        seccompProfile:
+          type: "RuntimeDefault"
+      script: |
+        #!/bin/bash
+        
+        echo "📝 记录测试结果..."
+        
+        # 创建结果记录
+        cat << EOF > /tmp/test-result.json
+        {
+          "test_id": "$(params.reposentry-event-id)",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "repository": {
+            "name": "$(params.repo-name)",
+            "url": "$(params.repo-url)",
+            "branch": "$(params.branch)",
+            "commit": "$(params.commit-sha)",
+            "provider": "$(params.provider)"
+          },
+          "reposentry": {
+            "event_id": "$(params.reposentry-event-id)",
+            "timestamp": "$(params.reposentry-timestamp)"
+          },
+          "result": {
+            "status": "success",
+            "duration": "约6秒",
+            "steps_completed": 4
+          }
+        }
+        EOF
+        
+        echo "✅ 测试结果已记录:"
+        cat /tmp/test-result.json
+        
+        echo ""
+        echo "🎯 端到端测试总结:"
+        echo "  ✅ Webhook 数据接收成功"
+        echo "  ✅ RepoSentry 事件处理成功"
+        echo "  ✅ Tekton Pipeline 触发成功"
+        echo "  ✅ Task 执行成功"
+        echo ""
+        echo "🎉 RepoSentry 端到端测试完成!"

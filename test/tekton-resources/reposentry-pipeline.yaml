@@ -1,0 +1,65 @@
+# RepoSentry 测试专用的 Tekton Pipeline
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: reposentry-test-pipeline
+  namespace: tekton-pipelines
+spec:
+  description: "RepoSentry 端到端测试 Pipeline"
+  params:
+    - name: repo-name
+      description: "仓库名称"
+      type: string
+      default: "unknown"
+    - name: repo-url
+      description: "仓库 URL"
+      type: string
+      default: ""
+    - name: branch
+      description: "分支名称"
+      type: string
+      default: "main"
+    - name: commit-sha
+      description: "提交 SHA"
+      type: string
+      default: ""
+    - name: event-type
+      description: "事件类型"
+      type: string
+      default: "push"
+    - name: provider
+      description: "Git 提供商"
+      type: string
+      default: "github"
+    - name: reposentry-event-id
+      description: "RepoSentry 事件 ID"
+      type: string
+      default: ""
+    - name: reposentry-timestamp
+      description: "RepoSentry 时间戳"
+      type: string
+      default: ""
+  tasks:
+    - name: reposentry-test
+      taskRef:
+        kind: Task
+        name: reposentry-test-task
+      params:
+        - name: repo-name
+          value: $(params.repo-name)
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: branch
+          value: $(params.branch)
+        - name: commit-sha
+          value: $(params.commit-sha)
+        - name: event-type
+          value: $(params.event-type)
+        - name: provider
+          value: $(params.provider)
+        - name: reposentry-event-id
+          value: $(params.reposentry-event-id)
+        - name: reposentry-timestamp
+          value: $(params.reposentry-timestamp)
+
+

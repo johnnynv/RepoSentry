@@ -12,13 +12,13 @@ import (
 type RateLimiter interface {
 	// Wait blocks until the rate limiter allows the request
 	Wait(ctx context.Context) error
-	
+
 	// Allow returns true if the request can proceed immediately
 	Allow() bool
-	
+
 	// GetLimit returns current rate limit info
 	GetLimit() RateLimitInfo
-	
+
 	// UpdateLimit updates the rate limit based on API response
 	UpdateLimit(limit, remaining int, resetTime time.Time)
 }
@@ -66,7 +66,7 @@ func (r *GitHubRateLimiter) Allow() bool {
 func (r *GitHubRateLimiter) GetLimit() RateLimitInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	return RateLimitInfo{
 		Limit:     r.limit,
 		Remaining: r.remaining,
@@ -79,11 +79,11 @@ func (r *GitHubRateLimiter) GetLimit() RateLimitInfo {
 func (r *GitHubRateLimiter) UpdateLimit(limit, remaining int, resetTime time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	r.limit = limit
 	r.remaining = remaining
 	r.resetTime = resetTime
-	
+
 	// Adjust limiter based on remaining requests
 	if remaining < 100 && time.Until(resetTime) > 10*time.Minute {
 		// Slow down significantly if we're running low
@@ -132,7 +132,7 @@ func (r *GitLabRateLimiter) Allow() bool {
 func (r *GitLabRateLimiter) GetLimit() RateLimitInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	return RateLimitInfo{
 		Limit:     r.limit,
 		Remaining: r.remaining,
@@ -145,11 +145,11 @@ func (r *GitLabRateLimiter) GetLimit() RateLimitInfo {
 func (r *GitLabRateLimiter) UpdateLimit(limit, remaining int, resetTime time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	r.limit = limit
 	r.remaining = remaining
 	r.resetTime = resetTime
-	
+
 	// Adjust limiter based on remaining requests
 	if remaining < 50 && time.Until(resetTime) > 30*time.Second {
 		// Slow down significantly if we're running low

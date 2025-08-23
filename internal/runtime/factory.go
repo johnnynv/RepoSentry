@@ -3,6 +3,7 @@ package runtime
 import (
 	"fmt"
 
+	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
 )
 
@@ -14,10 +15,13 @@ func NewDefaultRuntimeFactory() *DefaultRuntimeFactory {
 	return &DefaultRuntimeFactory{}
 }
 
-// CreateRuntime implements RuntimeFactory.CreateRuntime
-func (f *DefaultRuntimeFactory) CreateRuntime(config *types.Config) (Runtime, error) {
+// CreateRuntime implements RuntimeFactory.CreateRuntime with logger manager
+func (f *DefaultRuntimeFactory) CreateRuntime(config *types.Config, loggerManager *logger.Manager) (Runtime, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config cannot be nil")
+	}
+	if loggerManager == nil {
+		return nil, fmt.Errorf("loggerManager cannot be nil")
 	}
 
 	// Validate configuration
@@ -25,8 +29,8 @@ func (f *DefaultRuntimeFactory) CreateRuntime(config *types.Config) (Runtime, er
 		return nil, fmt.Errorf("invalid runtime configuration: %w", err)
 	}
 
-	// Create runtime manager
-	runtime, err := NewRuntimeManager(config)
+	// Create runtime manager with logger
+	runtime, err := NewRuntimeManager(config, loggerManager)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create runtime manager: %w", err)
 	}

@@ -31,11 +31,11 @@ type ScheduledRepository struct {
 }
 
 // NewScheduler creates a new scheduler
-func NewScheduler(config PollerConfig) *SchedulerImpl {
+func NewScheduler(config PollerConfig, parentLogger *logger.Entry) *SchedulerImpl {
 	return &SchedulerImpl{
 		repositories: make(map[string]*ScheduledRepository),
 		config:       config,
-		logger: logger.GetDefaultLogger().WithFields(logger.Fields{
+		logger: parentLogger.WithFields(logger.Fields{
 			"component": "poller",
 			"module":    "scheduler",
 		}),
@@ -57,7 +57,7 @@ func (s *SchedulerImpl) Schedule(repo types.Repository) error {
 	}
 
 	nextPollTime := time.Now().Add(s.config.Interval)
-	
+
 	scheduledRepo := &ScheduledRepository{
 		Repository:   repo,
 		NextPollTime: nextPollTime,
@@ -262,23 +262,23 @@ func (s *SchedulerImpl) GetSchedulerStatus() SchedulerStatus {
 	}
 
 	return SchedulerStatus{
-		Running:                s.running,
-		TotalRepositories:      len(s.repositories),
-		EnabledRepositories:    enabledCount,
-		DisabledRepositories:   disabledCount,
-		NextScheduledPollTime:  nextPollTime,
-		PollingInterval:        s.config.Interval,
+		Running:               s.running,
+		TotalRepositories:     len(s.repositories),
+		EnabledRepositories:   enabledCount,
+		DisabledRepositories:  disabledCount,
+		NextScheduledPollTime: nextPollTime,
+		PollingInterval:       s.config.Interval,
 	}
 }
 
 // SchedulerStatus represents the current status of the scheduler
 type SchedulerStatus struct {
-	Running                bool          `json:"running"`
-	TotalRepositories      int           `json:"total_repositories"`
-	EnabledRepositories    int           `json:"enabled_repositories"`
-	DisabledRepositories   int           `json:"disabled_repositories"`
-	NextScheduledPollTime  time.Time     `json:"next_scheduled_poll_time,omitempty"`
-	PollingInterval        time.Duration `json:"polling_interval"`
+	Running               bool          `json:"running"`
+	TotalRepositories     int           `json:"total_repositories"`
+	EnabledRepositories   int           `json:"enabled_repositories"`
+	DisabledRepositories  int           `json:"disabled_repositories"`
+	NextScheduledPollTime time.Time     `json:"next_scheduled_poll_time,omitempty"`
+	PollingInterval       time.Duration `json:"polling_interval"`
 }
 
 // UpdateRepositorySchedule updates the schedule for a specific repository

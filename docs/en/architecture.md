@@ -509,6 +509,6 @@ type BranchCache struct {
 
 - [Quick Start Guide](QUICKSTART.md)
 - [User Manual](USER_MANUAL.md)
-- [Deployment Guide](../deployments/README.md)
+- [Deployment Guide](../../deployments/README.md)
 - [Development Guide](DEVELOPMENT.md)
 - [API Documentation](../API_EXAMPLES.md)

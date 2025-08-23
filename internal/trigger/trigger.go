@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
 )
 
@@ -11,22 +12,22 @@ import (
 type Trigger interface {
 	// SendEvent sends an event to the trigger destination
 	SendEvent(ctx context.Context, event types.Event) (*TriggerResult, error)
-	
+
 	// BatchSendEvents sends multiple events efficiently
 	BatchSendEvents(ctx context.Context, events []types.Event) (*BatchTriggerResult, error)
-	
+
 	// ValidateConfig validates the trigger configuration
 	ValidateConfig(config TriggerConfig) error
-	
+
 	// GetType returns the trigger type identifier
 	GetType() string
-	
+
 	// HealthCheck checks if the trigger destination is available
 	HealthCheck(ctx context.Context) error
-	
+
 	// GetMetrics returns trigger performance metrics
 	GetMetrics() TriggerMetrics
-	
+
 	// Close closes the trigger and releases resources
 	Close() error
 }
@@ -45,24 +46,24 @@ type TriggerResult struct {
 
 // BatchTriggerResult represents the result of batch trigger operations
 type BatchTriggerResult struct {
-	BatchID       string            `json:"batch_id"`
-	TotalEvents   int               `json:"total_events"`
-	SuccessCount  int               `json:"success_count"`
-	FailureCount  int               `json:"failure_count"`
-	Results       []TriggerResult   `json:"results"`
-	Duration      time.Duration     `json:"duration"`
-	Timestamp     time.Time         `json:"timestamp"`
-	Metadata      map[string]string `json:"metadata,omitempty"`
+	BatchID      string            `json:"batch_id"`
+	TotalEvents  int               `json:"total_events"`
+	SuccessCount int               `json:"success_count"`
+	FailureCount int               `json:"failure_count"`
+	Results      []TriggerResult   `json:"results"`
+	Duration     time.Duration     `json:"duration"`
+	Timestamp    time.Time         `json:"timestamp"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
 // TriggerConfig represents trigger configuration
 type TriggerConfig struct {
 	Type     string                 `yaml:"type" json:"type"`
 	Enabled  bool                   `yaml:"enabled" json:"enabled"`
-	Tekton   TektonConfig          `yaml:"tekton,omitempty" json:"tekton,omitempty"`
-	Webhook  WebhookConfig         `yaml:"webhook,omitempty" json:"webhook,omitempty"`
-	Retry    RetryConfig           `yaml:"retry" json:"retry"`
-	Timeout  time.Duration         `yaml:"timeout" json:"timeout"`
+	Tekton   TektonConfig           `yaml:"tekton,omitempty" json:"tekton,omitempty"`
+	Webhook  WebhookConfig          `yaml:"webhook,omitempty" json:"webhook,omitempty"`
+	Retry    RetryConfig            `yaml:"retry" json:"retry"`
+	Timeout  time.Duration          `yaml:"timeout" json:"timeout"`
 	Metadata map[string]interface{} `yaml:"metadata,omitempty" json:"metadata,omitempty"`
 }
 
@@ -87,18 +88,18 @@ type WebhookConfig struct {
 // TLSConfig represents TLS configuration
 type TLSConfig struct {
 	InsecureSkipVerify bool   `yaml:"insecure_skip_verify" json:"insecure_skip_verify"`
-	CertFile          string `yaml:"cert_file,omitempty" json:"cert_file,omitempty"`
-	KeyFile           string `yaml:"key_file,omitempty" json:"key_file,omitempty"`
-	CAFile            string `yaml:"ca_file,omitempty" json:"ca_file,omitempty"`
+	CertFile           string `yaml:"cert_file,omitempty" json:"cert_file,omitempty"`
+	KeyFile            string `yaml:"key_file,omitempty" json:"key_file,omitempty"`
+	CAFile             string `yaml:"ca_file,omitempty" json:"ca_file,omitempty"`
 }
 
 // RetryConfig represents retry configuration
 type RetryConfig struct {
-	MaxAttempts   int           `yaml:"max_attempts" json:"max_attempts"`
-	InitialDelay  time.Duration `yaml:"initial_delay" json:"initial_delay"`
-	MaxDelay      time.Duration `yaml:"max_delay" json:"max_delay"`
-	BackoffFactor float64       `yaml:"backoff_factor" json:"backoff_factor"`
-	RetryableErrors []string    `yaml:"retryable_errors,omitempty" json:"retryable_errors,omitempty"`
+	MaxAttempts     int           `yaml:"max_attempts" json:"max_attempts"`
+	InitialDelay    time.Duration `yaml:"initial_delay" json:"initial_delay"`
+	MaxDelay        time.Duration `yaml:"max_delay" json:"max_delay"`
+	BackoffFactor   float64       `yaml:"backoff_factor" json:"backoff_factor"`
+	RetryableErrors []string      `yaml:"retryable_errors,omitempty" json:"retryable_errors,omitempty"`
 }
 
 // TriggerMetrics represents trigger performance metrics
@@ -110,17 +111,20 @@ type TriggerMetrics struct {
 	LastSuccessTime  time.Time     `json:"last_success_time,omitempty"`
 	LastFailureTime  time.Time     `json:"last_failure_time,omitempty"`
 	ConsecutiveFails int64         `json:"consecutive_fails"`
-	Uptime          time.Duration `json:"uptime"`
+	Uptime           time.Duration `json:"uptime"`
 }
 
 // EventTransformer transforms events to different payload formats
 type EventTransformer interface {
+	// TransformToCloudEvents transforms event to CloudEvents 1.0 standard format
+	TransformToCloudEvents(event types.Event) (CloudEventsPayload, error)
+
 	// TransformToGitHub transforms event to GitHub webhook format
 	TransformToGitHub(event types.Event) (GitHubPayload, error)
-	
-	// TransformToTekton transforms event to Tekton EventListener format
+
+	// TransformToTekton transforms event to Tekton EventListener format (legacy)
 	TransformToTekton(event types.Event) (TektonPayload, error)
-	
+
 	// TransformToGeneric transforms event to generic webhook format
 	TransformToGeneric(event types.Event) (GenericPayload, error)
 }
@@ -137,7 +141,66 @@ type GitHubPayload struct {
 	HeadCommit *GitHubCommit    `json:"head_commit,omitempty"`
 }
 
-// TektonPayload represents Tekton EventListener payload
+// CloudEventsPayload represents CloudEvents 1.0 standard payload
+type CloudEventsPayload struct {
+	SpecVersion     string          `json:"specversion"`
+	Type            string          `json:"type"`
+	Source          string          `json:"source"`
+	ID              string          `json:"id"`
+	Time            string          `json:"time"`
+	DataContentType string          `json:"datacontenttype"`
+	Data            CloudEventsData `json:"data"`
+}
+
+// CloudEventsData represents the data section of CloudEvents payload
+type CloudEventsData struct {
+	Repository     CloudEventsRepository `json:"repository"`
+	Branch         CloudEventsBranch     `json:"branch"`
+	Commit         CloudEventsCommit     `json:"commit"`
+	Event          CloudEventsEvent      `json:"event"`
+	PreviousCommit *CloudEventsCommit    `json:"previous_commit,omitempty"`
+}
+
+// CloudEventsRepository represents repository information in CloudEvents format
+type CloudEventsRepository struct {
+	Provider     string `json:"provider"`
+	Organization string `json:"organization"`
+	Name         string `json:"name"`
+	FullName     string `json:"full_name"`
+	URL          string `json:"url"`
+	ID           string `json:"id"`
+}
+
+// CloudEventsBranch represents branch information in CloudEvents format
+type CloudEventsBranch struct {
+	Name string `json:"name"`
+	Ref  string `json:"ref"`
+}
+
+// CloudEventsCommit represents commit information in CloudEvents format
+type CloudEventsCommit struct {
+	SHA       string             `json:"sha"`
+	ShortSHA  string             `json:"short_sha"`
+	Message   string             `json:"message,omitempty"`
+	Author    *CloudEventsAuthor `json:"author,omitempty"`
+	Timestamp string             `json:"timestamp,omitempty"`
+}
+
+// CloudEventsAuthor represents author information in CloudEvents format
+type CloudEventsAuthor struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+// CloudEventsEvent represents event information in CloudEvents format
+type CloudEventsEvent struct {
+	Type          string `json:"type"`
+	TriggerSource string `json:"trigger_source"`
+	TriggerID     string `json:"trigger_id"`
+	DetectionTime string `json:"detection_time"`
+}
+
+// TektonPayload represents Tekton EventListener payload (legacy format)
 type TektonPayload struct {
 	GitHubPayload
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
@@ -173,14 +236,14 @@ type GitHubUser struct {
 
 // GitHubCommit represents commit information in GitHub format
 type GitHubCommit struct {
-	ID        string      `json:"id"`
-	Message   string      `json:"message,omitempty"`
-	Timestamp time.Time   `json:"timestamp,omitempty"`
-	URL       string      `json:"url,omitempty"`
-	Author    GitHubUser  `json:"author,omitempty"`
-	Added     []string    `json:"added,omitempty"`
-	Removed   []string    `json:"removed,omitempty"`
-	Modified  []string    `json:"modified,omitempty"`
+	ID        string     `json:"id"`
+	Message   string     `json:"message,omitempty"`
+	Timestamp time.Time  `json:"timestamp,omitempty"`
+	URL       string     `json:"url,omitempty"`
+	Author    GitHubUser `json:"author,omitempty"`
+	Added     []string   `json:"added,omitempty"`
+	Removed   []string   `json:"removed,omitempty"`
+	Modified  []string   `json:"modified,omitempty"`
 }
 
 // TriggerError represents trigger-specific errors
@@ -197,13 +260,13 @@ func (e *TriggerError) Error() string {
 
 // Common trigger error types
 const (
-	ErrorTypeConnection   = "connection_error"
-	ErrorTypeTimeout     = "timeout_error"
-	ErrorTypeAuth        = "auth_error"
-	ErrorTypeValidation  = "validation_error"
-	ErrorTypeServer      = "server_error"
-	ErrorTypeClient      = "client_error"
-	ErrorTypeUnknown     = "unknown_error"
+	ErrorTypeConnection = "connection_error"
+	ErrorTypeTimeout    = "timeout_error"
+	ErrorTypeAuth       = "auth_error"
+	ErrorTypeValidation = "validation_error"
+	ErrorTypeServer     = "server_error"
+	ErrorTypeClient     = "client_error"
+	ErrorTypeUnknown    = "unknown_error"
 )
 
 // TriggerFactory creates trigger instances
@@ -215,10 +278,10 @@ func NewTriggerFactory() *TriggerFactory {
 }
 
 // Create creates a trigger instance based on configuration
-func (f *TriggerFactory) Create(config TriggerConfig) (Trigger, error) {
+func (f *TriggerFactory) Create(config TriggerConfig, parentLogger *logger.Entry) (Trigger, error) {
 	switch config.Type {
 	case "tekton":
-		return NewTektonTrigger(config)
+		return NewTektonTrigger(config, parentLogger)
 	case "webhook":
 		// TODO: Implement webhook trigger
 		return nil, &TriggerError{

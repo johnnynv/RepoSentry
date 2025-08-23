@@ -126,7 +126,7 @@ func TestNoOpRateLimiter(t *testing.T) {
 
 	// Test UpdateLimit (should be no-op)
 	limiter.UpdateLimit(100, 50, time.Now())
-	
+
 	// Should still be unlimited
 	info = limiter.GetLimit()
 	if info.Limit != 999999 {
@@ -144,7 +144,7 @@ func TestRateLimiterConcurrency(t *testing.T) {
 	const numRequests = 5
 
 	errChan := make(chan error, numGoroutines)
-	
+
 	for i := 0; i < numGoroutines; i++ {
 		go func() {
 			for j := 0; j < numRequests; j++ {
@@ -180,7 +180,7 @@ func TestRateLimiterAdaptiveRates(t *testing.T) {
 
 	// Test low remaining requests (should slow down)
 	limiter.UpdateLimit(5000, 50, time.Now().Add(time.Hour))
-	
+
 	// Test very low remaining requests (should slow down significantly)
 	limiter.UpdateLimit(5000, 10, time.Now().Add(time.Hour))
 
@@ -193,13 +193,13 @@ func TestRateLimiterAdaptiveRates(t *testing.T) {
 
 func TestRateLimiterContextCancellation(t *testing.T) {
 	limiter := NewGitHubRateLimiter()
-	
+
 	// Create a context that will be cancelled
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// Cancel immediately
 	cancel()
-	
+
 	// Wait should return context error
 	err := limiter.Wait(ctx)
 	if err == nil {

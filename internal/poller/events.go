@@ -2,10 +2,10 @@ package poller
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"regexp"
 	"time"
-	"crypto/sha256"
 
 	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
@@ -17,9 +17,9 @@ type EventGeneratorImpl struct {
 }
 
 // NewEventGenerator creates a new event generator
-func NewEventGenerator() *EventGeneratorImpl {
+func NewEventGenerator(parentLogger *logger.Entry) *EventGeneratorImpl {
 	return &EventGeneratorImpl{
-		logger: logger.GetDefaultLogger().WithFields(logger.Fields{
+		logger: parentLogger.WithFields(logger.Fields{
 			"component": "poller",
 			"module":    "event_generator",
 		}),
@@ -54,8 +54,8 @@ func (eg *EventGeneratorImpl) GenerateEvents(ctx context.Context, repo types.Rep
 
 	if len(filteredChanges) == 0 {
 		eg.logger.WithFields(logger.Fields{
-			"operation":     "generate_events",
-			"repository":    repo.Name,
+			"operation":        "generate_events",
+			"repository":       repo.Name,
 			"original_changes": len(changes),
 		}).Info("All changes filtered out, no events to generate")
 		return []types.Event{}, nil
@@ -68,22 +68,22 @@ func (eg *EventGeneratorImpl) GenerateEvents(ctx context.Context, repo types.Rep
 		event, err := eg.createEventFromChange(repo, change, timestamp)
 		if err != nil {
 			eg.logger.WithError(err).WithFields(logger.Fields{
-				"operation":  "generate_events",
-				"repository": repo.Name,
-				"branch":     change.Branch,
+				"operation":   "generate_events",
+				"repository":  repo.Name,
+				"branch":      change.Branch,
 				"change_type": change.ChangeType,
 			}).Error("Failed to create event from change")
 			continue // Skip this change, continue with others
 		}
 
 		events = append(events, event)
-		
+
 		eg.logger.WithFields(logger.Fields{
-			"operation":  "generate_events",
-			"repository": repo.Name,
-			"branch":     change.Branch,
+			"operation":   "generate_events",
+			"repository":  repo.Name,
+			"branch":      change.Branch,
 			"change_type": change.ChangeType,
-			"event_id":   event.ID,
+			"event_id":    event.ID,
 		}).Info("Generated event from branch change")
 	}
 
@@ -109,8 +109,8 @@ func (eg *EventGeneratorImpl) FilterChanges(repo types.Repository, changes []Bra
 	if repo.BranchRegex == "" {
 		// No regex filter, return all changes
 		eg.logger.WithFields(logger.Fields{
-			"operation":   "filter_changes",
-			"repository":  repo.Name,
+			"operation":    "filter_changes",
+			"repository":   repo.Name,
 			"output_count": len(changes),
 		}).Debug("No branch regex specified, returning all changes")
 		return changes, nil
@@ -125,7 +125,7 @@ func (eg *EventGeneratorImpl) FilterChanges(repo types.Repository, changes []Bra
 	for _, change := range changes {
 		if regex.MatchString(change.Branch) {
 			filtered = append(filtered, change)
-			
+
 			eg.logger.WithFields(logger.Fields{
 				"operation":   "filter_changes",
 				"repository":  repo.Name,
@@ -134,10 +134,10 @@ func (eg *EventGeneratorImpl) FilterChanges(repo types.Repository, changes []Bra
 			}).Debug("Change passed regex filter")
 		} else {
 			eg.logger.WithFields(logger.Fields{
-				"operation":   "filter_changes",
-				"repository":  repo.Name,
-				"branch":      change.Branch,
-				"change_type": change.ChangeType,
+				"operation":    "filter_changes",
+				"repository":   repo.Name,
+				"branch":       change.Branch,
+				"change_type":  change.ChangeType,
 				"branch_regex": repo.BranchRegex,
 			}).Debug("Change filtered out by regex")
 		}
@@ -225,10 +225,10 @@ func (eg *EventGeneratorImpl) getEventType(changeType string) types.EventType {
 
 // EventFilter provides additional filtering capabilities
 type EventFilter struct {
-	IncludeProtected   bool     `yaml:"include_protected" json:"include_protected"`
-	ExcludeProtected   bool     `yaml:"exclude_protected" json:"exclude_protected"`
-	IncludeChangeTypes []string `yaml:"include_change_types" json:"include_change_types"`
-	ExcludeChangeTypes []string `yaml:"exclude_change_types" json:"exclude_change_types"`
+	IncludeProtected   bool          `yaml:"include_protected" json:"include_protected"`
+	ExcludeProtected   bool          `yaml:"exclude_protected" json:"exclude_protected"`
+	IncludeChangeTypes []string      `yaml:"include_change_types" json:"include_change_types"`
+	ExcludeChangeTypes []string      `yaml:"exclude_change_types" json:"exclude_change_types"`
 	MinCommitAge       time.Duration `yaml:"min_commit_age" json:"min_commit_age"`
 }
 
@@ -293,13 +293,13 @@ func (ef *EventFilter) ApplyFilter(changes []BranchChange) []BranchChange {
 
 // EventStatistics provides statistics about event generation
 type EventStatistics struct {
-	TotalChanges     int64 `json:"total_changes"`
-	FilteredChanges  int64 `json:"filtered_changes"`
-	GeneratedEvents  int64 `json:"generated_events"`
-	FailedEvents     int64 `json:"failed_events"`
-	NewBranches      int64 `json:"new_branches"`
-	UpdatedBranches  int64 `json:"updated_branches"`
-	DeletedBranches  int64 `json:"deleted_branches"`
+	TotalChanges      int64 `json:"total_changes"`
+	FilteredChanges   int64 `json:"filtered_changes"`
+	GeneratedEvents   int64 `json:"generated_events"`
+	FailedEvents      int64 `json:"failed_events"`
+	NewBranches       int64 `json:"new_branches"`
+	UpdatedBranches   int64 `json:"updated_branches"`
+	DeletedBranches   int64 `json:"deleted_branches"`
 	ProtectedBranches int64 `json:"protected_branches"`
 }
 

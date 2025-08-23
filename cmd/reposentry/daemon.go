@@ -56,13 +56,13 @@ var (
 func init() {
 	// Add daemon command to root
 	rootCmd.AddCommand(daemonCmd)
-	
+
 	// Add subcommands
 	daemonCmd.AddCommand(daemonStartCmd)
 	daemonCmd.AddCommand(daemonStopCmd)
 	daemonCmd.AddCommand(daemonRestartCmd)
 	daemonCmd.AddCommand(daemonStatusCmd)
-	
+
 	// Flags for daemon start
 	daemonStartCmd.Flags().StringVarP(&daemonConfigFile, "config", "c", "", "Configuration file path (required)")
 	daemonStartCmd.Flags().StringVarP(&daemonLogLevel, "log-level", "l", "info", "Log level (debug, info, warn, error)")
@@ -70,10 +70,10 @@ func init() {
 	daemonStartCmd.Flags().StringVar(&daemonLogFile, "log-file", "/var/log/reposentry.log", "Log file path")
 	daemonStartCmd.Flags().StringVar(&daemonPIDFile, "pid-file", "/var/run/reposentry.pid", "PID file path")
 	daemonStartCmd.Flags().IntVar(&daemonHealthPort, "health-port", 8080, "Health check server port")
-	
+
 	// Mark config as required for start
 	daemonStartCmd.MarkFlagRequired("config")
-	
+
 	// Flags for stop, restart, status commands
 	for _, cmd := range []*cobra.Command{daemonStopCmd, daemonRestartCmd, daemonStatusCmd} {
 		cmd.Flags().StringVar(&daemonPIDFile, "pid-file", "/var/run/reposentry.pid", "PID file path")
@@ -131,7 +131,7 @@ func daemonStop(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Sent shutdown signal to RepoSentry daemon (PID: %d)\n", pid)
-	
+
 	// TODO: Wait for process to actually stop and remove PID file
 	return nil
 }
@@ -143,7 +143,7 @@ func daemonRestart(cmd *cobra.Command, args []string) error {
 		if err := daemonStop(cmd, args); err != nil {
 			return err
 		}
-		
+
 		// TODO: Wait for process to actually stop
 		fmt.Println("Waiting for daemon to stop...")
 		// time.Sleep(2 * time.Second)
@@ -156,13 +156,13 @@ func daemonRestart(cmd *cobra.Command, args []string) error {
 
 func daemonStatus(cmd *cobra.Command, args []string) error {
 	pid, running := isDaemonRunning(daemonPIDFile)
-	
+
 	if running {
 		fmt.Printf("RepoSentry daemon is running (PID: %d)\n", pid)
-		
+
 		// Try to get status from health endpoint if available
 		// TODO: Implement health check query
-		
+
 		return nil
 	} else {
 		fmt.Println("RepoSentry daemon is not running")

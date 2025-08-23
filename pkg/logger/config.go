@@ -2,10 +2,10 @@ package logger
 
 // Config represents logger configuration
 type Config struct {
-	Level      string `yaml:"level" json:"level"`           // debug, info, warn, error
-	Format     string `yaml:"format" json:"format"`         // json, text
-	Output     string `yaml:"output" json:"output"`         // stdout, stderr, file path
-	File       FileConfig `yaml:"file" json:"file,omitempty"` // file rotation settings
+	Level  string     `yaml:"level" json:"level"`         // debug, info, warn, error
+	Format string     `yaml:"format" json:"format"`       // json, text
+	Output string     `yaml:"output" json:"output"`       // stdout, stderr, file path
+	File   FileConfig `yaml:"file" json:"file,omitempty"` // file rotation settings
 }
 
 // FileConfig represents file logging configuration

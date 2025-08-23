@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"testing"
 	"time"
 
@@ -8,7 +9,7 @@ import (
 )
 
 func TestEventTransformer_TransformToGitHub(t *testing.T) {
-	transformer := NewEventTransformer()
+	transformer := NewEventTransformer(logger.GetDefaultLogger().WithField("test", "transformer"))
 
 	tests := []struct {
 		name     string
@@ -136,7 +137,7 @@ func TestEventTransformer_TransformToGitHub(t *testing.T) {
 }
 
 func TestEventTransformer_TransformToTekton(t *testing.T) {
-	transformer := NewEventTransformer()
+	transformer := NewEventTransformer(logger.GetDefaultLogger().WithField("test", "transformer"))
 
 	event := types.Event{
 		ID:         "event_tekton_123",
@@ -193,7 +194,7 @@ func TestEventTransformer_TransformToTekton(t *testing.T) {
 }
 
 func TestEventTransformer_TransformToGeneric(t *testing.T) {
-	transformer := NewEventTransformer()
+	transformer := NewEventTransformer(logger.GetDefaultLogger().WithField("test", "transformer"))
 
 	event := types.Event{
 		ID:         "event_generic_123",
@@ -240,7 +241,7 @@ func TestEventTransformer_TransformToGeneric(t *testing.T) {
 }
 
 func TestEventTransformer_GetShortSHA(t *testing.T) {
-	transformer := NewEventTransformer()
+	transformer := NewEventTransformer(logger.GetDefaultLogger().WithField("test", "transformer"))
 
 	tests := []struct {
 		input    string
@@ -263,7 +264,7 @@ func TestEventTransformer_GetShortSHA(t *testing.T) {
 }
 
 func TestEventTransformer_GetBranchRef(t *testing.T) {
-	transformer := NewEventTransformer()
+	transformer := NewEventTransformer(logger.GetDefaultLogger().WithField("test", "transformer"))
 
 	tests := []struct {
 		input    string
@@ -286,7 +287,7 @@ func TestEventTransformer_GetBranchRef(t *testing.T) {
 }
 
 func TestEventTransformer_ExtractRepositoryInfo_NvidiaGitLab(t *testing.T) {
-	transformer := NewEventTransformer()
+	transformer := NewEventTransformer(logger.GetDefaultLogger().WithField("test", "transformer"))
 
 	// Test with NVIDIA GitLab URL
 	event := types.Event{
@@ -315,7 +316,7 @@ func TestEventTransformer_ExtractRepositoryInfo_NvidiaGitLab(t *testing.T) {
 }
 
 func TestEventTransformer_CreateCommitFromEvent(t *testing.T) {
-	transformer := NewEventTransformer()
+	transformer := NewEventTransformer(logger.GetDefaultLogger().WithField("test", "transformer"))
 
 	tests := []struct {
 		name     string
@@ -379,6 +380,107 @@ func TestEventTransformer_CreateCommitFromEvent(t *testing.T) {
 			}
 			if result.Author.Name != tt.expected.Author.Name {
 				t.Errorf("Author.Name: expected %s, got %s", tt.expected.Author.Name, result.Author.Name)
+			}
+		})
+	}
+}
+
+func TestEventTransformer_TransformToCloudEvents(t *testing.T) {
+	transformer := NewEventTransformer(logger.GetDefaultLogger().WithField("test", "cloudevents"))
+
+	tests := []struct {
+		name     string
+		event    types.Event
+		expected CloudEventsPayload
+		wantErr  bool
+	}{
+		{
+			name: "GitHub event with repository URL",
+			event: types.Event{
+				ID:         "event_123",
+				Type:       types.EventTypeBranchUpdated,
+				Repository: "test-repo",
+				Branch:     "main",
+				CommitSHA:  "abcd1234567890abcdef1234567890abcdef1234",
+				Provider:   "github",
+				Timestamp:  time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+				Metadata: map[string]string{
+					"repository_url": "https://github.com/owner/test-repo",
+				},
+			},
+			expected: CloudEventsPayload{
+				SpecVersion:     "1.0",
+				Type:            "dev.reposentry.repository.branch_updated",
+				Source:          "reposentry/github",
+				DataContentType: "application/json",
+				Data: CloudEventsData{
+					Repository: CloudEventsRepository{
+						Provider:     "github",
+						Organization: "owner",
+						Name:         "test-repo",
+						FullName:     "owner/test-repo",
+						URL:          "https://github.com/owner/test-repo",
+					},
+					Branch: CloudEventsBranch{
+						Name: "main",
+						Ref:  "refs/heads/main",
+					},
+					Commit: CloudEventsCommit{
+						SHA:      "abcd1234567890abcdef1234567890abcdef1234",
+						ShortSHA: "abcd1234",
+					},
+					Event: CloudEventsEvent{
+						Type:          "branch_updated",
+						TriggerSource: "reposentry",
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := transformer.TransformToCloudEvents(tt.event)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if result.SpecVersion != tt.expected.SpecVersion {
+				t.Errorf("Expected SpecVersion %s, got %s", tt.expected.SpecVersion, result.SpecVersion)
+			}
+
+			if result.Type != tt.expected.Type {
+				t.Errorf("Expected Type %s, got %s", tt.expected.Type, result.Type)
+			}
+
+			if result.Source != tt.expected.Source {
+				t.Errorf("Expected Source %s, got %s", tt.expected.Source, result.Source)
+			}
+
+			if result.Data.Repository.Name != tt.expected.Data.Repository.Name {
+				t.Errorf("Expected Repository.Name %s, got %s", tt.expected.Data.Repository.Name, result.Data.Repository.Name)
+			}
+
+			if result.Data.Repository.Organization != tt.expected.Data.Repository.Organization {
+				t.Errorf("Expected Repository.Organization %s, got %s", tt.expected.Data.Repository.Organization, result.Data.Repository.Organization)
+			}
+
+			if result.Data.Branch.Name != tt.expected.Data.Branch.Name {
+				t.Errorf("Expected Branch.Name %s, got %s", tt.expected.Data.Branch.Name, result.Data.Branch.Name)
+			}
+
+			if result.Data.Commit.ShortSHA != tt.expected.Data.Commit.ShortSHA {
+				t.Errorf("Expected Commit.ShortSHA %s, got %s", tt.expected.Data.Commit.ShortSHA, result.Data.Commit.ShortSHA)
 			}
 		})
 	}

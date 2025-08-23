@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-
 	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
 )
@@ -27,9 +26,9 @@ type GitLabClient struct {
 
 // GitLabBranch represents a branch response from GitLab API
 type GitLabBranch struct {
-	Name      string `json:"name"`
+	Name      string       `json:"name"`
 	Commit    GitLabCommit `json:"commit"`
-	Protected bool   `json:"protected"`
+	Protected bool         `json:"protected"`
 }
 
 // GitLabCommit represents a commit in GitLab API response
@@ -39,32 +38,37 @@ type GitLabCommit struct {
 
 // GitLabProject represents a project in GitLab API
 type GitLabProject struct {
-	ID            int    `json:"id"`
-	Name          string `json:"name"`
+	ID                int    `json:"id"`
+	Name              string `json:"name"`
 	NameWithNamespace string `json:"name_with_namespace"`
-	Path          string `json:"path"`
+	Path              string `json:"path"`
 	PathWithNamespace string `json:"path_with_namespace"`
-	WebURL        string `json:"web_url"`
-	HTTPURLToRepo string `json:"http_url_to_repo"`
-	Visibility    string `json:"visibility"`
+	WebURL            string `json:"web_url"`
+	HTTPURLToRepo     string `json:"http_url_to_repo"`
+	Visibility        string `json:"visibility"`
 }
 
 // NewGitLabClient creates a new GitLab client
-func NewGitLabClient(config ClientConfig, rateLimiter RateLimiter, fallback *FallbackClient) (*GitLabClient, error) {
+func NewGitLabClient(config ClientConfig, rateLimiter RateLimiter, fallback *FallbackClient, parentLogger *logger.Entry) (*GitLabClient, error) {
 	if config.Token == "" {
 		return nil, fmt.Errorf("GitLab token is required")
 	}
 
 	baseURL := config.BaseURL
 	if baseURL == "" {
-		baseURL = "https://gitlab.com/api/v4"
+		// Auto-detect GitLab API URL from repository URL
+		if config.RepositoryURL != "" {
+			baseURL = extractGitLabAPIURL(config.RepositoryURL)
+		} else {
+			baseURL = "https://gitlab.com/api/v4"
+		}
 	}
 
 	httpClient := &http.Client{
 		Timeout: config.Timeout,
 	}
 
-	clientLogger := logger.GetDefaultLogger().WithFields(logger.Fields{
+	clientLogger := parentLogger.WithFields(logger.Fields{
 		"component": "gitclient",
 		"provider":  "gitlab",
 		"base_url":  baseURL,
@@ -98,7 +102,7 @@ func (c *GitLabClient) GetBranches(ctx context.Context, repo types.Repository) (
 	}
 
 	url := fmt.Sprintf("%s/projects/%s/repository/branches", c.baseURL, projectID)
-	
+
 	var gitlabBranches []GitLabBranch
 	if err := c.makeRequest(ctx, "GET", url, nil, &gitlabBranches); err != nil {
 		if c.config.EnableFallback && IsRetryableError(err) {
@@ -136,7 +140,7 @@ func (c *GitLabClient) GetLatestCommit(ctx context.Context, repo types.Repositor
 	}
 
 	url := fmt.Sprintf("%s/projects/%s/repository/branches/%s", c.baseURL, projectID, branch)
-	
+
 	var gitlabBranch GitLabBranch
 	if err := c.makeRequest(ctx, "GET", url, nil, &gitlabBranch); err != nil {
 		if c.config.EnableFallback && IsRetryableError(err) {
@@ -159,7 +163,7 @@ func (c *GitLabClient) GetRateLimit(ctx context.Context) (*types.RateLimit, erro
 	// GitLab doesn't have a dedicated rate limit endpoint
 	// We return the current state from our rate limiter
 	limitInfo := c.rateLimiter.GetLimit()
-	
+
 	return &types.RateLimit{
 		Limit:     limitInfo.Limit,
 		Remaining: limitInfo.Remaining,
@@ -185,14 +189,14 @@ func (c *GitLabClient) getProjectID(ctx context.Context, repoURL string) (string
 	}
 
 	projectPath := url.QueryEscape(fmt.Sprintf("%s/%s", namespace, project))
-	
+
 	// Wait for rate limiter
 	if err := c.rateLimiter.Wait(ctx); err != nil {
 		return "", err
 	}
 
 	url := fmt.Sprintf("%s/projects/%s", c.baseURL, projectPath)
-	
+
 	var gitlabProject GitLabProject
 	if err := c.makeRequest(ctx, "GET", url, nil, &gitlabProject); err != nil {
 		return "", err
@@ -320,4 +324,31 @@ func (c *GitLabClient) parseResetTime(resetStr string) time.Time {
 		return resetTime
 	}
 	return time.Now().Add(time.Minute) // Default to 1 minute if parsing fails
+}
+
+// extractGitLabAPIURL extracts GitLab API URL from repository URL
+func extractGitLabAPIURL(repoURL string) string {
+	// Parse the repository URL to extract the host
+	parsedURL, err := url.Parse(repoURL)
+	if err != nil {
+		return "https://gitlab.com/api/v4" // Default fallback
+	}
+
+	// Construct API URL from the host
+	scheme := parsedURL.Scheme
+	if scheme == "" {
+		scheme = "https"
+	}
+
+	// For our specific use case, support these two GitLab instances
+	host := parsedURL.Host
+	switch host {
+	case "gitlab-master.nvidia.com":
+		return fmt.Sprintf("%s://%s/api/v4", scheme, host)
+	case "gitlab.com":
+		return "https://gitlab.com/api/v4"
+	default:
+		// For any other GitLab instance, construct API URL
+		return fmt.Sprintf("%s://%s/api/v4", scheme, host)
+	}
 }

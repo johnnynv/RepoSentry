@@ -11,7 +11,7 @@ app:
 
 # Polling configuration
 polling:
-  interval: "5m"          # How often to check repositories
+  interval: "5m"          # How often to check repositories (minimum: 1m)
   timeout: "30s"          # Timeout for each operation
   max_workers: 5          # Maximum concurrent workers
   batch_size: 10          # Process repositories in batches
@@ -44,7 +44,7 @@ repositories:
     token: "${GITHUB_TOKEN}"  # Environment variable substitution
     branch_regex: "^(main|develop|feature/.*)$"
     enabled: true
-    polling_interval: "3m"  # Override global interval for this repo
+    polling_interval: "3m"  # Override global interval (minimum: 1m, protects API limits)
     
   # GitLab repository example  
   - name: "my-gitlab-repo"

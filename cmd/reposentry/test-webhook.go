@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/johnnynv/RepoSentry/internal/trigger"
 	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
+	"github.com/spf13/cobra"
 )
 
 var testWebhookCmd = &cobra.Command{
@@ -20,12 +20,12 @@ var testWebhookCmd = &cobra.Command{
 }
 
 var (
-	tektonURL    string
-	tektonNS     string
-	testRepo     string
-	testBranch   string
-	testCommit   string
-	dryRun       bool
+	tektonURL  string
+	tektonNS   string
+	testRepo   string
+	testBranch string
+	testCommit string
+	dryRun     bool
 )
 
 func init() {
@@ -35,7 +35,7 @@ func init() {
 	testWebhookCmd.Flags().StringVar(&testBranch, "branch", "main", "Test branch name")
 	testWebhookCmd.Flags().StringVar(&testCommit, "commit", "abcd1234567890abcdef1234567890abcdef1234", "Test commit SHA")
 	testWebhookCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Only show payload, don't send")
-	
+
 	testWebhookCmd.MarkFlagRequired("tekton-url")
 	rootCmd.AddCommand(testWebhookCmd)
 }
@@ -43,7 +43,7 @@ func init() {
 func runTestWebhook(cmd *cobra.Command, args []string) error {
 	// Initialize logger
 	appLogger := logger.GetDefaultLogger()
-	
+
 	appLogger.WithFields(logger.Fields{
 		"tekton_url": tektonURL,
 		"namespace":  tektonNS,
@@ -90,7 +90,8 @@ func runTestWebhook(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create transformer and generate payload
-	transformer := trigger.NewEventTransformer()
+	loggerEntry := appLogger.WithField("operation", "test-webhook")
+	transformer := trigger.NewEventTransformer(loggerEntry)
 	payload, err := transformer.TransformToTekton(event)
 	if err != nil {
 		return fmt.Errorf("failed to transform event to Tekton payload: %w", err)
@@ -112,7 +113,7 @@ func runTestWebhook(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create Tekton trigger
-	tektonTrigger, err := trigger.NewTektonTrigger(config)
+	tektonTrigger, err := trigger.NewTektonTrigger(config, loggerEntry)
 	if err != nil {
 		return fmt.Errorf("failed to create Tekton trigger: %w", err)
 	}
@@ -120,7 +121,7 @@ func runTestWebhook(cmd *cobra.Command, args []string) error {
 
 	// Send the event
 	appLogger.Info("🚀 Sending webhook to Tekton EventListener...")
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -140,7 +141,7 @@ func runTestWebhook(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Success: %v\n", result.Success)
 	fmt.Printf("  Duration: %v\n", result.Duration)
 	fmt.Printf("  Response: %s\n", result.ResponseBody)
-	
+
 	if len(result.Metadata) > 0 {
 		fmt.Printf("  Metadata:\n")
 		for key, value := range result.Metadata {

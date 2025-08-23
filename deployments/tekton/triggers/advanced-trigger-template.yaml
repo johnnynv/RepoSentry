@@ -1,0 +1,114 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: advanced-trigger-template
+  namespace: default
+spec:
+  params:
+  # 基础参数
+  - name: git-url
+    description: Git repository URL
+  - name: git-revision
+    description: Git revision/commit SHA
+    default: main
+  - name: short-sha
+    description: Short commit SHA
+    default: ""
+  - name: ref
+    description: Git reference (refs/heads/main)
+    default: "refs/heads/main"
+    
+  # RepoSentry增强参数
+  - name: provider
+    description: Git provider (github/gitlab)
+    default: "unknown"
+  - name: event-type
+    description: Event type (branch_updated/branch_created)
+    default: "unknown"
+  - name: repository-name
+    description: Full repository name (org/repo)
+    default: "unknown/unknown"
+  - name: repository-id
+    description: Unique repository identifier
+    default: "unknown-repo"
+  - name: organization
+    description: Organization/user name
+    default: "unknown"
+  - name: project-name
+    description: Project/repository name only
+    default: "unknown"
+  - name: branch
+    description: Branch name
+    default: "main"
+  - name: commit-sha
+    description: Full commit SHA
+    default: ""
+  - name: trigger-source
+    description: Trigger source (reposentry)
+    default: "unknown"
+  - name: trigger-id
+    description: Unique trigger identifier
+    default: "unknown"
+  - name: reposentry-event-id
+    description: RepoSentry event ID
+    default: ""
+  - name: message
+    description: Trigger message
+    default: "Triggered by webhook!"
+    
+  resourcetemplates:
+  - apiVersion: tekton.dev/v1
+    kind: PipelineRun
+    metadata:
+      generateName: "$(tt.params.provider)-$(tt.params.project-name)-"
+      labels:
+        # 增强标签系统 - RepoSentry命名空间
+        reposentry.dev/provider: "$(tt.params.provider)"
+        reposentry.dev/organization: "$(tt.params.organization)"
+        reposentry.dev/project: "$(tt.params.project-name)"
+        reposentry.dev/repository: "$(tt.params.repository-id)"
+        reposentry.dev/branch: "$(tt.params.branch)"
+        reposentry.dev/event-type: "$(tt.params.event-type)"
+        reposentry.dev/trigger-source: "$(tt.params.trigger-source)"
+        
+        # Tekton标准标签
+        tekton.dev/pipeline: hello-pipeline
+        triggers.tekton.dev/eventlistener: hello-event-listener
+        triggers.tekton.dev/trigger: advanced-trigger
+        
+        # 附加标识标签
+        app.kubernetes.io/name: reposentry-pipeline
+        app.kubernetes.io/component: pipeline-run
+        app.kubernetes.io/part-of: reposentry
+        app.kubernetes.io/managed-by: tekton-triggers
+        
+      annotations:
+        # 增强注解
+        reposentry.dev/event-id: "$(tt.params.reposentry-event-id)"
+        reposentry.dev/trigger-id: "$(tt.params.trigger-id)"
+        reposentry.dev/commit-sha: "$(tt.params.commit-sha)"
+        reposentry.dev/short-sha: "$(tt.params.short-sha)"
+        reposentry.dev/git-ref: "$(tt.params.ref)"
+        
+    spec:
+      params:
+      - name: git-url
+        value: "$(tt.params.git-url)"
+      - name: git-revision
+        value: "$(tt.params.git-revision)"
+      - name: provider
+        value: "$(tt.params.provider)"
+      - name: event-type
+        value: "$(tt.params.event-type)"
+      - name: repository-name
+        value: "$(tt.params.repository-name)"
+      - name: organization
+        value: "$(tt.params.organization)"
+      - name: project-name
+        value: "$(tt.params.project-name)"
+      - name: branch
+        value: "$(tt.params.branch)"
+      - name: trigger-info
+        value: "$(tt.params.message)"
+      pipelineRef:
+        name: advanced-pipeline

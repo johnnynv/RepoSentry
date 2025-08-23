@@ -17,7 +17,7 @@ type EnvExpander struct {
 func NewEnvExpander(allowedVars []string) *EnvExpander {
 	// Pattern to match ${VAR_NAME} syntax
 	pattern := regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
-	
+
 	return &EnvExpander{
 		allowedVars: allowedVars,
 		pattern:     pattern,
@@ -29,20 +29,20 @@ func (e *EnvExpander) ExpandString(s string) (string, error) {
 	return e.pattern.ReplaceAllStringFunc(s, func(match string) string {
 		// Extract variable name from ${VAR_NAME}
 		varName := e.pattern.FindStringSubmatch(match)[1]
-		
+
 		// Check if variable is allowed
 		if !e.isVarAllowed(varName) {
 			// Return original string if not allowed (security)
 			return match
 		}
-		
+
 		// Get environment variable value
 		value := os.Getenv(varName)
 		if value == "" {
 			// Return original string if environment variable is not set
 			return match
 		}
-		
+
 		return value
 	}), nil
 }
@@ -50,7 +50,7 @@ func (e *EnvExpander) ExpandString(s string) (string, error) {
 // ExpandMap expands environment variables in all string values of a map
 func (e *EnvExpander) ExpandMap(m map[string]interface{}) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
-	
+
 	for key, value := range m {
 		expandedValue, err := e.expandValue(value)
 		if err != nil {
@@ -58,7 +58,7 @@ func (e *EnvExpander) ExpandMap(m map[string]interface{}) (map[string]interface{
 		}
 		result[key] = expandedValue
 	}
-	
+
 	return result, nil
 }
 
@@ -101,31 +101,31 @@ func (e *EnvExpander) matchPattern(pattern, varName string) bool {
 	if pattern == varName {
 		return true
 	}
-	
+
 	// Handle wildcard patterns
 	if strings.HasSuffix(pattern, "*") {
 		prefix := strings.TrimSuffix(pattern, "*")
 		return strings.HasPrefix(varName, prefix)
 	}
-	
+
 	if strings.HasPrefix(pattern, "*") {
 		suffix := strings.TrimPrefix(pattern, "*")
 		return strings.HasSuffix(varName, suffix)
 	}
-	
+
 	return false
 }
 
 // ValidateRequiredEnvVars checks if required environment variables are set
 func ValidateRequiredEnvVars(required []string) []string {
 	var missing []string
-	
+
 	for _, varName := range required {
 		if os.Getenv(varName) == "" {
 			missing = append(missing, varName)
 		}
 	}
-	
+
 	return missing
 }
 

@@ -43,15 +43,15 @@ const (
 
 // TektonEvent represents the payload sent to Tekton EventListener
 type TektonEvent struct {
-	Source       string            `json:"source"`       // "reposentry"
-	EventType    string            `json:"event_type"`   // "push", "branch_created", etc.
-	Repository   TektonRepository  `json:"repository"`
-	Branch       TektonBranch      `json:"branch"`
-	Commit       TektonCommit      `json:"commit"`
-	Provider     string            `json:"provider"`     // "github", "gitlab"
-	Timestamp    time.Time         `json:"timestamp"`
-	EventID      string            `json:"event_id"`
-	Headers      map[string]string `json:"headers,omitempty"`
+	Source     string            `json:"source"`     // "reposentry"
+	EventType  string            `json:"event_type"` // "push", "branch_created", etc.
+	Repository TektonRepository  `json:"repository"`
+	Branch     TektonBranch      `json:"branch"`
+	Commit     TektonCommit      `json:"commit"`
+	Provider   string            `json:"provider"` // "github", "gitlab"
+	Timestamp  time.Time         `json:"timestamp"`
+	EventID    string            `json:"event_id"`
+	Headers    map[string]string `json:"headers,omitempty"`
 }
 
 // TektonRepository represents repository information in Tekton event

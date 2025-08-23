@@ -35,13 +35,13 @@ func NewErrorResponse(err string) *Response {
 // Write writes the response to the HTTP response writer
 func (r *Response) Write(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	if r.Success {
 		w.WriteHeader(http.StatusOK)
 	} else {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
-	
+
 	json.NewEncoder(w).Encode(r)
 }
 

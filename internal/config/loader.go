@@ -110,7 +110,7 @@ func (l *Loader) extractSecurityConfig(rawConfig map[string]interface{}) (*types
 		if err != nil {
 			return nil, err
 		}
-		
+
 		if err := yaml.Unmarshal(securityBytes, securityConfig); err != nil {
 			return nil, err
 		}
@@ -216,7 +216,7 @@ func (l *Loader) applyDefaults(config *types.Config) {
 		if repo.PollingInterval == 0 {
 			repo.PollingInterval = config.Polling.Interval
 		}
-		if repo.Enabled == false && repo.Name != "" {
+		if !repo.Enabled && repo.Name != "" {
 			// Default to enabled if not explicitly set
 			repo.Enabled = true
 		}
@@ -228,6 +228,10 @@ func (l *Loader) LoadWithDefaults(filePath string) (*types.Config, error) {
 	// Try to load from file first
 	if filePath != "" {
 		if config, err := l.LoadFromFile(filePath); err == nil {
+			// Load repositories from external file if specified
+			if err := l.loadRepositoriesConfig(config, filePath); err != nil {
+				return nil, fmt.Errorf("failed to load repositories config: %w", err)
+			}
 			return config, nil
 		}
 	}
@@ -235,8 +239,52 @@ func (l *Loader) LoadWithDefaults(filePath string) (*types.Config, error) {
 	// Fallback to minimal default configuration
 	defaultConfig := &types.Config{}
 	l.applyDefaults(defaultConfig)
-	
+
 	return defaultConfig, nil
+}
+
+// loadRepositoriesConfig loads repositories from external config file if specified
+func (l *Loader) loadRepositoriesConfig(config *types.Config, mainConfigPath string) error {
+	// If no repositories_config specified, use inline repositories (legacy mode)
+	if config.RepositoriesConfig == "" {
+		return nil
+	}
+
+	// Resolve repositories config path relative to main config
+	repoConfigPath := config.RepositoriesConfig
+	if !filepath.IsAbs(repoConfigPath) {
+		mainDir := filepath.Dir(mainConfigPath)
+		repoConfigPath = filepath.Join(mainDir, repoConfigPath)
+	}
+
+	// Load repositories config file
+	repoConfig, err := l.loadRepositoriesFromFile(repoConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load repositories from %s: %w", repoConfigPath, err)
+	}
+
+	// Merge repositories into main config
+	config.Repositories = repoConfig.Repositories
+
+	return nil
+}
+
+// loadRepositoriesFromFile loads repositories from a YAML file
+func (l *Loader) loadRepositoriesFromFile(filePath string) (*types.RepositoriesConfig, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	// Expand environment variables in YAML content
+	expandedContent := os.ExpandEnv(string(content))
+
+	var repoConfig types.RepositoriesConfig
+	if err := yaml.Unmarshal([]byte(expandedContent), &repoConfig); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+	}
+
+	return &repoConfig, nil
 }
 
 // Validate validates loaded configuration

@@ -1,0 +1,29 @@
+# User Repository Configuration
+# This file contains only the repositories you want to monitor
+# Place your repository information here
+
+# Your GitHub repositories
+github_repos:
+  - name: "my-project"
+    url: "https://github.com/username/my-project.git"
+    branch_regex: "^(main|dev|feature/.*)$"
+    enabled: true
+    polling_interval: "5m"  # Optional: override global interval
+
+  - name: "another-project"
+    url: "https://github.com/username/another-project.git"
+    branch_regex: "^(main|develop)$"
+    enabled: true
+
+# Your GitLab repositories
+gitlab_repos:
+  - name: "internal-project"
+    url: "https://gitlab.company.com/group/project.git"
+    branch_regex: "^(main|master|develop)$"
+    enabled: true
+    api_base_url: "https://gitlab.company.com/api/v4"  # For enterprise GitLab
+
+# Optional: Override global polling settings for testing
+polling_overrides:
+  test_mode: false  # Set to true for faster polling during testing
+  interval: "1m"    # Override global interval when test_mode is true

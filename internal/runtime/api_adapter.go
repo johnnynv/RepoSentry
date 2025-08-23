@@ -2,7 +2,7 @@ package runtime
 
 import (
 	"context"
-	
+
 	"github.com/johnnynv/RepoSentry/internal/api"
 )
 

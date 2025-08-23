@@ -20,11 +20,11 @@ type BranchMonitorImpl struct {
 }
 
 // NewBranchMonitor creates a new branch monitor
-func NewBranchMonitor(storage storage.Storage, clientFactory *gitclient.ClientFactory) *BranchMonitorImpl {
+func NewBranchMonitor(storage storage.Storage, clientFactory *gitclient.ClientFactory, parentLogger *logger.Entry) *BranchMonitorImpl {
 	return &BranchMonitorImpl{
 		storage:       storage,
 		clientFactory: clientFactory,
-		logger: logger.GetDefaultLogger().WithFields(logger.Fields{
+		logger: parentLogger.WithFields(logger.Fields{
 			"component": "poller",
 			"module":    "branch_monitor",
 		}),
@@ -34,7 +34,7 @@ func NewBranchMonitor(storage storage.Storage, clientFactory *gitclient.ClientFa
 // CheckBranches checks for changes in repository branches
 func (bm *BranchMonitorImpl) CheckBranches(ctx context.Context, repo types.Repository) ([]BranchChange, error) {
 	startTime := time.Now()
-	
+
 	bm.logger.WithFields(logger.Fields{
 		"operation":  "check_branches",
 		"repository": repo.Name,
@@ -44,6 +44,13 @@ func (bm *BranchMonitorImpl) CheckBranches(ctx context.Context, repo types.Repos
 	// Create Git client
 	clientConfig := gitclient.GetDefaultConfig()
 	clientConfig.Token = repo.Token
+
+	// Set provider-specific configuration
+	if repo.Provider == "gitlab" && repo.APIBaseURL != "" {
+		clientConfig.BaseURL = repo.APIBaseURL
+	} else if repo.Provider == "github" && repo.APIBaseURL != "" {
+		clientConfig.BaseURL = repo.APIBaseURL
+	}
 
 	client, err := bm.clientFactory.CreateClient(repo, clientConfig)
 	if err != nil {
@@ -82,11 +89,11 @@ func (bm *BranchMonitorImpl) CheckBranches(ctx context.Context, repo types.Repos
 	}
 
 	bm.logger.WithFields(logger.Fields{
-		"operation":          "check_branches",
-		"repository":         repo.Name,
-		"filtered_count":     len(filteredBranches),
-		"original_count":     len(currentBranches),
-		"branch_regex":       repo.BranchRegex,
+		"operation":      "check_branches",
+		"repository":     repo.Name,
+		"filtered_count": len(filteredBranches),
+		"original_count": len(currentBranches),
+		"branch_regex":   repo.BranchRegex,
 	}).Debug("Filtered branches by regex")
 
 	// Get stored branch states
@@ -118,7 +125,7 @@ func (bm *BranchMonitorImpl) CheckBranches(ctx context.Context, repo types.Repos
 	// Check for new and updated branches
 	for _, branch := range filteredBranches {
 		oldCommitSHA, exists := storedBranchMap[branch.Name]
-		
+
 		if !exists {
 			// New branch
 			change := BranchChange{
@@ -131,15 +138,15 @@ func (bm *BranchMonitorImpl) CheckBranches(ctx context.Context, repo types.Repos
 				Protected:    branch.Protected,
 			}
 			changes = append(changes, change)
-			
+
 			bm.logger.WithFields(logger.Fields{
-				"operation":  "check_branches",
-				"repository": repo.Name,
-				"branch":     branch.Name,
-				"commit_sha": branch.CommitSHA,
+				"operation":   "check_branches",
+				"repository":  repo.Name,
+				"branch":      branch.Name,
+				"commit_sha":  branch.CommitSHA,
 				"change_type": ChangeTypeNew,
 			}).Info("Detected new branch")
-			
+
 		} else if oldCommitSHA != branch.CommitSHA {
 			// Updated branch
 			change := BranchChange{
@@ -152,17 +159,17 @@ func (bm *BranchMonitorImpl) CheckBranches(ctx context.Context, repo types.Repos
 				Protected:    branch.Protected,
 			}
 			changes = append(changes, change)
-			
+
 			bm.logger.WithFields(logger.Fields{
-				"operation":     "check_branches",
-				"repository":    repo.Name,
-				"branch":        branch.Name,
-				"old_commit":    oldCommitSHA,
-				"new_commit":    branch.CommitSHA,
-				"change_type":   ChangeTypeUpdated,
+				"operation":   "check_branches",
+				"repository":  repo.Name,
+				"branch":      branch.Name,
+				"old_commit":  oldCommitSHA,
+				"new_commit":  branch.CommitSHA,
+				"change_type": ChangeTypeUpdated,
 			}).Info("Detected branch update")
 		}
-		
+
 		// Update stored state
 		repoState := storage.RepositoryState{
 			Repository: repo.Name,
@@ -171,7 +178,7 @@ func (bm *BranchMonitorImpl) CheckBranches(ctx context.Context, repo types.Repos
 			Protected:  branch.Protected,
 			LastCheck:  checkTime,
 		}
-		
+
 		if err := bm.storage.UpsertRepoState(ctx, repoState); err != nil {
 			bm.logger.WithError(err).WithFields(logger.Fields{
 				"operation":  "check_branches",
@@ -200,15 +207,15 @@ func (bm *BranchMonitorImpl) CheckBranches(ctx context.Context, repo types.Repos
 				Protected:    false, // Unknown, but assuming false
 			}
 			changes = append(changes, change)
-			
+
 			bm.logger.WithFields(logger.Fields{
-				"operation":    "check_branches",
-				"repository":   repo.Name,
-				"branch":       branchName,
-				"old_commit":   oldCommitSHA,
-				"change_type":  ChangeTypeDeleted,
+				"operation":   "check_branches",
+				"repository":  repo.Name,
+				"branch":      branchName,
+				"old_commit":  oldCommitSHA,
+				"change_type": ChangeTypeDeleted,
 			}).Info("Detected deleted branch")
-			
+
 			// Remove from storage
 			if err := bm.storage.DeleteRepoState(ctx, repo.Name, branchName); err != nil {
 				bm.logger.WithError(err).WithFields(logger.Fields{
@@ -221,7 +228,7 @@ func (bm *BranchMonitorImpl) CheckBranches(ctx context.Context, repo types.Repos
 	}
 
 	duration := time.Since(startTime)
-	
+
 	bm.logger.WithFields(logger.Fields{
 		"operation":    "check_branches",
 		"repository":   repo.Name,

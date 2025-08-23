@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/johnnynv/RepoSentry/internal/config"
 	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
+	"github.com/spf13/cobra"
 )
 
 var validateCmd = &cobra.Command{
@@ -19,10 +19,12 @@ var validateCmd = &cobra.Command{
 This command checks:
 - YAML syntax validation
 - Required fields presence
-- Field value validation
+- Field value validation (including 1-minute minimum polling interval)
 - Repository URL format
 - Environment variable resolution
-- Tekton configuration validity`,
+- Tekton configuration validity
+
+Note: Polling intervals must be at least 1 minute to protect against API rate limits.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runValidate,
 }
@@ -37,7 +39,7 @@ func init() {
 	validateCmd.Flags().BoolVar(&validateEnvironment, "check-env", false, "Validate environment variables")
 	validateCmd.Flags().BoolVar(&validateConnections, "check-connections", false, "Test connectivity to external services")
 	validateCmd.Flags().StringVar(&validateFormat, "format", "text", "Output format (text, json)")
-	
+
 	configCmd.AddCommand(validateCmd)
 }
 
@@ -54,11 +56,11 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// Initialize logger
 	appLogger := logger.GetDefaultLogger()
-	
+
 	appLogger.WithFields(logger.Fields{
-		"config_file":        configFile,
-		"check_environment":  validateEnvironment,
-		"check_connections":  validateConnections,
+		"config_file":       configFile,
+		"check_environment": validateEnvironment,
+		"check_connections": validateConnections,
 		"format":            validateFormat,
 	}).Info("Starting configuration validation")
 
@@ -69,14 +71,14 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// Create config manager
 	configManager := config.NewManager(appLogger)
-	
+
 	// Load and validate configuration
 	err := configManager.Load(configFile)
 	if err != nil {
 		if validateFormat == "json" {
 			return printValidationResultJSON(configFile, false, []string{err.Error()}, nil)
 		}
-		
+
 		fmt.Printf("❌ Configuration validation FAILED\n\n")
 		fmt.Printf("File: %s\n", configFile)
 		fmt.Printf("Error: %v\n", err)
@@ -114,13 +116,13 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 func validateEnvironmentVariables(cfg *types.Config) []string {
 	var warnings []string
-	
+
 	// Check repositories for environment variables
 	for i, repo := range cfg.Repositories {
 		if repo.Token == "" {
 			warnings = append(warnings, fmt.Sprintf("Repository %d (%s) has no token configured", i, repo.Name))
 		}
-		
+
 		// Check if token looks like environment variable pattern
 		if len(repo.Token) > 0 && repo.Token[0] == '$' {
 			envVar := repo.Token[1:] // Remove $
@@ -137,24 +139,24 @@ func validateEnvironmentVariables(cfg *types.Config) []string {
 
 func validateConnectivity(cfg *types.Config, logger *logger.Logger) []string {
 	var errors []string
-	
+
 	// TODO: Add connectivity tests
 	// - Test Tekton EventListener URL
 	// - Test repository URLs (if tokens available)
-	
+
 	logger.Info("Connectivity validation not yet implemented")
-	
+
 	return errors
 }
 
 func performBasicChecks(cfg *types.Config) []string {
 	var warnings []string
-	
+
 	// Check polling intervals
 	if cfg.Polling.Interval < 60 {
 		warnings = append(warnings, "Polling interval is less than 1 minute, this may cause API rate limiting")
 	}
-	
+
 	// Check for duplicate repository names
 	namesSeen := make(map[string]bool)
 	for _, repo := range cfg.Repositories {
@@ -163,12 +165,12 @@ func performBasicChecks(cfg *types.Config) []string {
 		}
 		namesSeen[repo.Name] = true
 	}
-	
+
 	// Check storage configuration
 	if cfg.Storage.SQLite.MaxConnections > 100 {
 		warnings = append(warnings, "SQLite max connections is very high, consider reducing for better performance")
 	}
-	
+
 	return warnings
 }
 
@@ -179,18 +181,18 @@ func printValidationResultJSON(file string, valid bool, errors, warnings []strin
 		"errors":   errors,
 		"warnings": warnings,
 	}
-	
+
 	jsonBytes, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
-	
+
 	fmt.Println(string(jsonBytes))
-	
+
 	if !valid {
 		os.Exit(1)
 	}
-	
+
 	return nil
 }
 
@@ -200,14 +202,14 @@ func printValidationResultText(file string, cfg *types.Config, errors, warnings 
 	} else {
 		fmt.Printf("❌ Configuration validation FAILED\n\n")
 	}
-	
+
 	fmt.Printf("File: %s\n", file)
 	fmt.Printf("App: %s\n", cfg.App.Name)
 	fmt.Printf("Repositories: %d\n", len(cfg.Repositories))
 	fmt.Printf("Storage: %s\n", cfg.Storage.Type)
 	fmt.Printf("Tekton URL: %s\n", cfg.Tekton.EventListenerURL)
 	fmt.Println()
-	
+
 	if len(errors) > 0 {
 		fmt.Printf("🚨 Errors:\n")
 		for _, err := range errors {
@@ -215,7 +217,7 @@ func printValidationResultText(file string, cfg *types.Config, errors, warnings 
 		}
 		fmt.Println()
 	}
-	
+
 	if len(warnings) > 0 {
 		fmt.Printf("⚠️  Warnings:\n")
 		for _, warn := range warnings {
@@ -223,14 +225,14 @@ func printValidationResultText(file string, cfg *types.Config, errors, warnings 
 		}
 		fmt.Println()
 	}
-	
+
 	if len(errors) == 0 && len(warnings) == 0 {
 		fmt.Printf("🎉 No issues found!\n")
 	}
-	
+
 	if len(errors) > 0 {
 		return fmt.Errorf("configuration validation failed with %d error(s)", len(errors))
 	}
-	
+
 	return nil
 }

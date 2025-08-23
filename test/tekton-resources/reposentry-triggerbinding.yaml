@@ -1,0 +1,29 @@
+# RepoSentry 专用的 TriggerBinding
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: reposentry-trigger-binding
+  namespace: tekton-pipelines
+spec:
+  params:
+    # 从 RepoSentry payload 中提取仓库信息
+    - name: repo-name
+      value: $(body.repository.name)
+    - name: repo-url
+      value: $(body.repository.clone_url)
+    - name: branch
+      value: $(body.ref)
+    - name: commit-sha
+      value: $(body.head_commit.id)
+    - name: event-type
+      value: $(header.X-GitHub-Event)
+    - name: provider
+      value: $(body.metadata.provider)
+    
+    # 从 RepoSentry 元数据中提取信息
+    - name: reposentry-event-id
+      value: $(body.metadata.reposentry_event_id)
+    - name: reposentry-timestamp
+      value: $(body.metadata.reposentry_timestamp)
+
+

@@ -19,10 +19,10 @@ type APIComponent struct {
 
 // NewAPIComponent creates a new API component
 func NewAPIComponent(configManager *config.Manager, storage storage.Storage, port int, runtime Runtime, parentLogger *logger.Entry) *APIComponent {
-	server := api.NewServer(port, configManager, storage)
+	server := api.NewServer(port, configManager, storage, parentLogger)
 	adapter := newRuntimeAPIAdapter(runtime)
 	server.SetRuntime(adapter) // Set runtime adapter for health checks
-	
+
 	return &APIComponent{
 		BaseComponent: BaseComponent{
 			name:   "api_server",
@@ -40,7 +40,7 @@ func (c *APIComponent) Start(ctx context.Context) error {
 	}).Info("Starting API server component")
 
 	startTime := time.Now()
-	
+
 	if err := c.server.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start API server: %w", err)
 	}

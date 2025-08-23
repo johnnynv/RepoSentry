@@ -10,7 +10,9 @@ examples/
 │   ├── basic.yaml        # Basic configuration
 │   ├── minimal.yaml      # Minimal configuration
 │   ├── development.yaml  # Development environment
-│   └── production.yaml   # Production environment
+│   ├── production.yaml   # Production environment
+│   ├── user-repos.yaml.template  # User repository template
+│   └── my-repos.yaml     # Example user configuration
 
 ├── kubernetes/        # Kubernetes examples
 └── scripts/          # Utility scripts
@@ -20,6 +22,39 @@ examples/
 
 ### Basic Configuration (`configs/basic.yaml`)
 A standard configuration suitable for most use cases with common Git providers.
+
+### User Repository Configuration (`configs/user-repos.yaml`)
+A simplified configuration file containing only repository information. Users can edit this file without being overwhelmed by system configuration options.
+
+**Benefits:**
+- **Separation of Concerns**: Repository configuration is separate from system configuration
+- **User-Friendly**: Only shows what users need to configure
+- **Easy Maintenance**: Simple structure for adding/removing repositories
+- **Template-Based**: Start with a template and customize as needed
+
+**Usage:**
+1. Copy `user-repos.yaml.template` to `user-repos.yaml`
+2. Edit with your repository information
+3. Use `merge-config.sh` to combine with system configuration
+4. Run RepoSentry with the merged configuration
+
+**Example Structure:**
+```yaml
+# My GitHub repositories
+github_repos:
+  - name: "my-project"
+    url: "https://github.com/username/my-project.git"
+    branch_regex: "^(main|dev)$"
+    enabled: true
+
+# My GitLab repositories
+gitlab_repos:
+  - name: "internal-project"
+    url: "https://gitlab.company.com/group/project.git"
+    branch_regex: "^(main|develop)$"
+    enabled: true
+    api_base_url: "https://gitlab.company.com/api/v4"
+```
 
 ### Minimal Configuration (`configs/minimal.yaml`)
 The simplest possible configuration to get RepoSentry running.
@@ -40,7 +75,24 @@ Production-ready configuration with:
 
 ## 🚀 Quick Start
 
-### 1. Choose a Configuration
+### Option 1: Interactive Setup (Recommended)
+Use the interactive setup script for a guided experience:
+
+```bash
+./examples/scripts/start.sh
+```
+
+This will guide you through:
+1. Building RepoSentry
+2. Setting up environment variables
+3. Managing repositories
+4. Validating configuration
+5. Merging user configuration (if using user-repos.yaml)
+6. Starting the service
+
+### Option 2: Manual Configuration
+
+#### 1. Choose a Configuration
 
 ```bash
 # Copy desired configuration
@@ -61,6 +113,36 @@ export GITLAB_TOKEN="your_gitlab_token"
 
 # Enterprise GitLab (if needed)
 export GITLAB_ENTERPRISE_TOKEN="your_enterprise_token"
+```
+
+#### 2a. Using User Repository Configuration (Recommended)
+
+If you prefer to maintain a simple repository list:
+
+```bash
+# Copy the template
+cp examples/configs/user-repos.yaml.template user-repos.yaml
+
+# Edit with your repositories
+vim user-repos.yaml
+
+# Merge with system configuration
+./examples/scripts/merge-config.sh
+
+# Use the merged configuration
+cp config-merged.yaml config.yaml
+```
+
+#### 2b. Using Full Configuration
+
+Or edit the full configuration directly:
+
+```bash
+# Copy desired configuration
+cp examples/configs/basic.yaml config.yaml
+
+# Edit with your settings
+vim config.yaml
 ```
 
 ### 3. Run RepoSentry

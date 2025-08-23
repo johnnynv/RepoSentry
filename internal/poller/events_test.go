@@ -6,11 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
 )
 
 func TestEventGenerator_GenerateEvents(t *testing.T) {
-	generator := NewEventGenerator()
+	logger := logger.GetDefaultLogger().WithField("test", "event_generator")
+	generator := NewEventGenerator(logger)
 	ctx := context.Background()
 
 	repo := types.Repository{
@@ -122,7 +124,8 @@ func TestEventGenerator_GenerateEvents(t *testing.T) {
 }
 
 func TestEventGenerator_FilterChanges(t *testing.T) {
-	generator := NewEventGenerator()
+	logger := logger.GetDefaultLogger().WithField("test", "event_generator")
+	generator := NewEventGenerator(logger)
 
 	tests := []struct {
 		name          string
@@ -208,7 +211,8 @@ func TestEventGenerator_FilterChanges(t *testing.T) {
 }
 
 func TestEventGenerator_getEventType(t *testing.T) {
-	generator := NewEventGenerator()
+	logger := logger.GetDefaultLogger().WithField("test", "event_generator")
+	generator := NewEventGenerator(logger)
 
 	tests := []struct {
 		changeType   string
@@ -231,7 +235,8 @@ func TestEventGenerator_getEventType(t *testing.T) {
 }
 
 func TestEventGenerator_generateEventID(t *testing.T) {
-	generator := NewEventGenerator()
+	logger := logger.GetDefaultLogger().WithField("test", "event_generator")
+	generator := NewEventGenerator(logger)
 	timestamp := time.Now()
 
 	// Test that same input generates same ID
@@ -270,7 +275,8 @@ func TestEventGenerator_generateEventID(t *testing.T) {
 }
 
 func TestEventGenerator_createEventFromChange(t *testing.T) {
-	generator := NewEventGenerator()
+	logger := logger.GetDefaultLogger().WithField("test", "event_generator")
+	generator := NewEventGenerator(logger)
 	timestamp := time.Now()
 
 	repo := types.Repository{
@@ -343,7 +349,8 @@ func TestEventGenerator_createEventFromChange(t *testing.T) {
 // Helper function to check if strings package is imported
 
 func TestEventGenerator_Integration(t *testing.T) {
-	generator := NewEventGenerator()
+	logger := logger.GetDefaultLogger().WithField("test", "event_generator")
+	generator := NewEventGenerator(logger)
 	ctx := context.Background()
 
 	repo := types.Repository{

@@ -5,7 +5,7 @@ import (
 
 	"github.com/johnnynv/RepoSentry/internal/api/middleware"
 	httpSwagger "github.com/swaggo/http-swagger"
-	
+
 	// Import generated docs
 	_ "github.com/johnnynv/RepoSentry/docs"
 )
@@ -13,47 +13,47 @@ import (
 // setupRouter configures all API routes
 func (s *Server) setupRouter() http.Handler {
 	mux := http.NewServeMux()
-	
+
 	// Health check endpoints
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/health/live", s.handleLiveness)
 	mux.HandleFunc("/health/ready", s.handleReadiness)
-	
+
 	// Business API endpoints
 	mux.HandleFunc("/api/repositories", s.handleRepositories)
 	mux.HandleFunc("/api/repositories/", s.handleRepository) // with ID
-	
+
 	mux.HandleFunc("/api/events", s.handleEvents)
 	mux.HandleFunc("/api/events/recent", s.handleRecentEvents)
 	mux.HandleFunc("/api/events/", s.handleEvent) // with ID
-	
+
 	// System endpoints
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/metrics", s.handleMetrics)
-	
+
 	// API documentation and version
 	mux.HandleFunc("/api", s.handleAPIDocumentation)
 	mux.HandleFunc("/version", s.handleVersion)
-	
+
 	// Swagger UI
 	mux.Handle("/swagger/", httpSwagger.Handler(
 		httpSwagger.URL("/swagger/doc.json"), // The url pointing to API definition
 	))
-	
+
 	// Apply middleware
 	handler := middleware.RequestLogger(s.logger)(mux)
 	handler = middleware.CORS()(handler)
 	handler = middleware.Recovery(s.logger)(handler)
-	
+
 	return handler
 }
 
 // handleAPIDocumentation provides comprehensive API documentation
 func (s *Server) handleAPIDocumentation(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	version := GetVersion()
-	
+
 	apiDoc := map[string]interface{}{
 		"name":        "RepoSentry API",
 		"version":     version.API,
@@ -71,7 +71,7 @@ func (s *Server) handleAPIDocumentation(w http.ResponseWriter, r *http.Request) 
 					"returns":     "Simple alive status",
 				},
 				"GET /health/ready": map[string]string{
-					"description": "Kubernetes readiness probe endpoint", 
+					"description": "Kubernetes readiness probe endpoint",
 					"returns":     "Ready status",
 				},
 			},
@@ -135,7 +135,7 @@ func (s *Server) handleAPIDocumentation(w http.ResponseWriter, r *http.Request) 
 			"Panic recovery",
 		},
 	}
-	
+
 	w.WriteHeader(http.StatusOK)
 	response := NewJSONResponse(apiDoc)
 	response.Write(w)

@@ -50,7 +50,7 @@ func TestMigrationManager_Basic(t *testing.T) {
 		-- Insert test data
 		INSERT INTO test_table (name) VALUES ('test');
 	`
-	
+
 	statements := manager.splitSQL(testSQL)
 	t.Logf("Split SQL into %d statements", len(statements))
 	for i, stmt := range statements {

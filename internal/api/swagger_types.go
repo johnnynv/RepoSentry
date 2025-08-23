@@ -14,7 +14,7 @@ type JSONResponse struct {
 // HealthStatus represents system health status
 // @Description System health check response
 type HealthStatus struct {
-	Healthy    bool                          `json:"healthy" example:"true"`
+	Healthy    bool                             `json:"healthy" example:"true"`
 	Components map[string]ComponentHealthStatus `json:"components"`
 } // @name HealthStatus
 

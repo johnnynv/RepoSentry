@@ -10,7 +10,7 @@ import (
 
 // Mock runtime for testing
 type mockRuntime struct {
-	healthStatus *HealthStatus
+	healthStatus  *HealthStatus
 	runtimeStatus *RuntimeStatus
 }
 
@@ -63,7 +63,7 @@ func TestRuntimeAPIAdapter_Health(t *testing.T) {
 					Message:  "Config is healthy",
 				},
 				{
-					Name:     "storage", 
+					Name:     "storage",
 					Status:   HealthStateHealthy,
 					Duration: time.Millisecond * 20,
 					Message:  "Storage is healthy",

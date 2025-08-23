@@ -8,6 +8,7 @@ import (
 
 	"github.com/johnnynv/RepoSentry/internal/gitclient"
 	"github.com/johnnynv/RepoSentry/internal/storage"
+	"github.com/johnnynv/RepoSentry/internal/trigger"
 	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
 )
@@ -20,16 +21,17 @@ type PollerImpl struct {
 	eventGenerator EventGenerator
 	scheduler      Scheduler
 	clientFactory  *gitclient.ClientFactory
+	trigger        trigger.Trigger
 	logger         *logger.Entry
-	
+
 	// Runtime state
-	mu         sync.RWMutex
-	running    bool
-	startTime  time.Time
-	stopChan   chan struct{}
-	workQueue  chan types.Repository
-	workers    []*worker
-	metrics    PollerMetrics
+	mu        sync.RWMutex
+	running   bool
+	startTime time.Time
+	stopChan  chan struct{}
+	workQueue chan types.Repository
+	workers   []*worker
+	metrics   PollerMetrics
 }
 
 // worker represents a polling worker
@@ -40,10 +42,10 @@ type worker struct {
 }
 
 // NewPoller creates a new poller instance
-func NewPoller(config PollerConfig, storage storage.Storage, clientFactory *gitclient.ClientFactory) *PollerImpl {
-	branchMonitor := NewBranchMonitor(storage, clientFactory)
-	eventGenerator := NewEventGenerator()
-	scheduler := NewScheduler(config)
+func NewPoller(config PollerConfig, storage storage.Storage, clientFactory *gitclient.ClientFactory, trigger trigger.Trigger, parentLogger *logger.Entry) *PollerImpl {
+	branchMonitor := NewBranchMonitor(storage, clientFactory, parentLogger)
+	eventGenerator := NewEventGenerator(parentLogger)
+	scheduler := NewScheduler(config, parentLogger)
 
 	poller := &PollerImpl{
 		config:         config,
@@ -52,10 +54,12 @@ func NewPoller(config PollerConfig, storage storage.Storage, clientFactory *gitc
 		eventGenerator: eventGenerator,
 		scheduler:      scheduler,
 		clientFactory:  clientFactory,
-		logger: logger.GetDefaultLogger().WithFields(logger.Fields{
+		trigger:        trigger,
+		logger: parentLogger.WithFields(logger.Fields{
 			"component": "poller",
 			"module":    "poller_impl",
 		}),
+
 		stopChan:  make(chan struct{}),
 		workQueue: make(chan types.Repository, config.BatchSize*2), // Buffer for work queue
 		metrics: PollerMetrics{
@@ -76,16 +80,16 @@ func (p *PollerImpl) Start(ctx context.Context) error {
 	}
 
 	p.logger.WithFields(logger.Fields{
-		"operation":    "start",
-		"max_workers":  p.config.MaxWorkers,
-		"batch_size":   p.config.BatchSize,
-		"interval":     p.config.Interval.String(),
-		"timeout":      p.config.Timeout.String(),
+		"operation":   "start",
+		"max_workers": p.config.MaxWorkers,
+		"batch_size":  p.config.BatchSize,
+		"interval":    p.config.Interval.String(),
+		"timeout":     p.config.Timeout.String(),
 	}).Info("Starting poller")
 
 	p.running = true
 	p.startTime = time.Now()
-	
+
 	// Start scheduler
 	if err := p.scheduler.Start(ctx); err != nil {
 		p.running = false
@@ -143,7 +147,7 @@ func (p *PollerImpl) Stop(ctx context.Context) error {
 // PollRepository polls a specific repository once
 func (p *PollerImpl) PollRepository(ctx context.Context, repo types.Repository) (*PollResult, error) {
 	startTime := time.Now()
-	
+
 	p.logger.WithFields(logger.Fields{
 		"operation":  "poll_repository",
 		"repository": repo.Name,
@@ -161,13 +165,13 @@ func (p *PollerImpl) PollRepository(ctx context.Context, repo types.Repository) 
 		result.Success = false
 		result.Error = err
 		result.Duration = time.Since(startTime)
-		
+
 		p.logger.WithError(err).WithFields(logger.Fields{
 			"operation":  "poll_repository",
 			"repository": repo.Name,
 			"duration":   result.Duration.String(),
 		}).Error("Failed to check branches")
-		
+
 		p.updateMetrics(result)
 		return result, err
 	}
@@ -187,7 +191,7 @@ func (p *PollerImpl) PollRepository(ctx context.Context, repo types.Repository) 
 			// Don't fail the entire poll if event generation fails
 		} else {
 			result.Events = events
-			
+
 			// Store events in storage
 			for _, event := range events {
 				if err := p.storage.CreateEvent(ctx, event); err != nil {
@@ -196,6 +200,48 @@ func (p *PollerImpl) PollRepository(ctx context.Context, repo types.Repository) 
 						"repository": repo.Name,
 						"event_id":   event.ID,
 					}).Error("Failed to store event")
+				}
+			}
+
+			// Automatically trigger Tekton pipeline for new events
+			if p.trigger != nil {
+				for _, event := range events {
+					go func(e types.Event) {
+						triggerCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+						defer cancel()
+
+						p.logger.WithFields(logger.Fields{
+							"operation":  "auto_trigger",
+							"event_id":   e.ID,
+							"repository": e.Repository,
+							"branch":     e.Branch,
+						}).Info("Automatically triggering Tekton pipeline for event")
+
+						result, err := p.trigger.SendEvent(triggerCtx, e)
+						if err != nil {
+							p.logger.WithError(err).WithFields(logger.Fields{
+								"operation":  "auto_trigger",
+								"event_id":   e.ID,
+								"repository": e.Repository,
+							}).Error("Failed to trigger Tekton pipeline")
+						} else if result.Success {
+							p.logger.WithFields(logger.Fields{
+								"operation":   "auto_trigger",
+								"event_id":    e.ID,
+								"repository":  e.Repository,
+								"status_code": result.StatusCode,
+								"duration":    result.Duration,
+							}).Info("Successfully triggered Tekton pipeline")
+						} else {
+							p.logger.WithFields(logger.Fields{
+								"operation":   "auto_trigger",
+								"event_id":    e.ID,
+								"repository":  e.Repository,
+								"status_code": result.StatusCode,
+								"error":       result.Error,
+							}).Error("Tekton pipeline trigger failed")
+						}
+					}(event)
 				}
 			}
 		}
@@ -223,7 +269,7 @@ func (p *PollerImpl) GetStatus() PollerStatus {
 	defer p.mu.RUnlock()
 
 	schedulerStatus := p.scheduler.GetSchedulerStatus()
-	
+
 	var repositories []RepositoryStatus
 	for _, scheduledRepo := range p.scheduler.GetScheduledRepositories() {
 		repoStatus := RepositoryStatus{
@@ -260,6 +306,11 @@ func (p *PollerImpl) GetMetrics() PollerMetrics {
 	}
 
 	return metrics
+}
+
+// GetScheduler returns the scheduler instance
+func (p *PollerImpl) GetScheduler() Scheduler {
+	return p.scheduler
 }
 
 // AddRepository adds a repository to the polling schedule
@@ -302,7 +353,7 @@ func (p *PollerImpl) RemoveRepository(repo types.Repository) error {
 // run is the main polling loop
 func (p *PollerImpl) run(ctx context.Context) {
 	p.logger.Info("Poller main loop started")
-	
+
 	ticker := time.NewTicker(p.config.Interval)
 	defer ticker.Stop()
 
@@ -324,7 +375,7 @@ func (p *PollerImpl) run(ctx context.Context) {
 func (p *PollerImpl) processScheduledPolls(ctx context.Context) {
 	scheduledRepos := p.scheduler.GetScheduledRepositories()
 	now := time.Now()
-	
+
 	var readyRepos []types.Repository
 	for _, scheduledRepo := range scheduledRepos {
 		if scheduledRepo.Enabled && now.After(scheduledRepo.NextPollTime) {

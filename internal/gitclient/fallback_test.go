@@ -2,23 +2,24 @@ package gitclient
 
 import (
 	"context"
+	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"testing"
 
 	"github.com/johnnynv/RepoSentry/pkg/types"
 )
 
 func TestFallbackClient_parseLsRemoteOutput(t *testing.T) {
-	client := NewFallbackClient()
+	client := NewFallbackClient(logger.GetDefaultLogger().WithField("test", "fallback"))
 
 	tests := []struct {
-		name           string
-		output         string
-		expectedCount  int
-		expectedFirst  string
+		name          string
+		output        string
+		expectedCount int
+		expectedFirst string
 	}{
 		{
-			name: "Normal output",
-			output: "abc123def456789012345678901234567890abcd\trefs/heads/main\ndef456789012345678901234567890abcdef123\trefs/heads/develop\n1234567890abcdef123456789012345678901234\trefs/heads/feature/test",
+			name:          "Normal output",
+			output:        "abc123def456789012345678901234567890abcd\trefs/heads/main\ndef456789012345678901234567890abcdef123\trefs/heads/develop\n1234567890abcdef123456789012345678901234\trefs/heads/feature/test",
 			expectedCount: 3,
 			expectedFirst: "main",
 		},
@@ -28,8 +29,8 @@ func TestFallbackClient_parseLsRemoteOutput(t *testing.T) {
 			expectedCount: 0,
 		},
 		{
-			name: "Single branch",
-			output: "abc123def456789012345678901234567890abcd\trefs/heads/master",
+			name:          "Single branch",
+			output:        "abc123def456789012345678901234567890abcd\trefs/heads/master",
 			expectedCount: 1,
 			expectedFirst: "master",
 		},
@@ -71,15 +72,15 @@ func TestFallbackClient_parseLsRemoteOutput(t *testing.T) {
 }
 
 func TestFallbackClient_GetProvider(t *testing.T) {
-	client := NewFallbackClient()
-	
+	client := NewFallbackClient(logger.GetDefaultLogger().WithField("test", "fallback"))
+
 	if provider := client.GetProvider(); provider != "git-fallback" {
 		t.Errorf("Expected provider 'git-fallback', got %s", provider)
 	}
 }
 
 func TestFallbackClient_GetRateLimit(t *testing.T) {
-	client := NewFallbackClient()
+	client := NewFallbackClient(logger.GetDefaultLogger().WithField("test", "fallback"))
 	ctx := context.Background()
 
 	rateLimit, err := client.GetRateLimit(ctx)
@@ -98,8 +99,8 @@ func TestFallbackClient_GetRateLimit(t *testing.T) {
 }
 
 func TestFallbackClient_Close(t *testing.T) {
-	client := NewFallbackClient()
-	
+	client := NewFallbackClient(logger.GetDefaultLogger().WithField("test", "fallback"))
+
 	if err := client.Close(); err != nil {
 		t.Errorf("Close() error = %v", err)
 	}
@@ -178,7 +179,7 @@ func TestFallbackClient_Integration(t *testing.T) {
 		t.Skipf("Git not available: %v", err)
 	}
 
-	client := NewFallbackClient()
+	client := NewFallbackClient(logger.GetDefaultLogger().WithField("test", "fallback"))
 	repo := types.Repository{
 		Name:     "linux",
 		URL:      "https://github.com/torvalds/linux.git",
@@ -219,7 +220,7 @@ func TestFallbackClient_Integration(t *testing.T) {
 	}
 
 	if commitSHA != masterBranch.CommitSHA {
-		t.Errorf("Commit SHA mismatch: GetLatestCommit=%s, GetBranches=%s", 
+		t.Errorf("Commit SHA mismatch: GetLatestCommit=%s, GetBranches=%s",
 			commitSHA, masterBranch.CommitSHA)
 	}
 

@@ -17,21 +17,142 @@ type EventTransformerImpl struct {
 }
 
 // NewEventTransformer creates a new event transformer
-func NewEventTransformer() *EventTransformerImpl {
+func NewEventTransformer(parentLogger *logger.Entry) *EventTransformerImpl {
 	return &EventTransformerImpl{
-		logger: logger.GetDefaultLogger().WithFields(logger.Fields{
+		logger: parentLogger.WithFields(logger.Fields{
 			"component": "trigger",
 			"module":    "transformer",
 		}),
-		urlParser: NewURLParser(),
+		urlParser: NewURLParser(parentLogger),
 	}
+}
+
+// TransformToCloudEvents transforms event to CloudEvents 1.0 standard format
+func (t *EventTransformerImpl) TransformToCloudEvents(event types.Event) (CloudEventsPayload, error) {
+	t.logger.WithFields(logger.Fields{
+		"operation":  "transform_to_cloudevents",
+		"event_id":   event.ID,
+		"event_type": event.Type,
+	}).Debug("Transforming event to CloudEvents format")
+
+	// Get repository URL from event metadata (set by poller)
+	repositoryURL, exists := event.Metadata["repository_url"]
+	if !exists || repositoryURL == "" {
+		return CloudEventsPayload{}, fmt.Errorf("repository URL not found in event metadata")
+	}
+
+	repoInfo, err := t.urlParser.ParseRepositoryURL(repositoryURL)
+	if err != nil {
+		return CloudEventsPayload{}, fmt.Errorf("failed to parse repository URL: %w", err)
+	}
+
+	// Create repository data
+	repository := CloudEventsRepository{
+		Provider:     repoInfo.Provider,
+		Organization: repoInfo.Namespace,   // Use Namespace as Organization
+		Name:         repoInfo.ProjectName, // Use ProjectName as Name
+		FullName:     repoInfo.FullName,
+		URL:          repositoryURL,
+		ID:           fmt.Sprintf("%s-%s", strings.ToLower(repoInfo.Provider), strings.ReplaceAll(strings.ToLower(repoInfo.FullName), "/", "-")),
+	}
+
+	// Create branch data
+	branch := CloudEventsBranch{
+		Name: event.Branch,
+		Ref:  fmt.Sprintf("refs/heads/%s", event.Branch),
+	}
+
+	// Create commit data
+	var shortSHA string
+	if len(event.CommitSHA) >= 8 {
+		shortSHA = event.CommitSHA[:8]
+	} else {
+		shortSHA = event.CommitSHA
+	}
+
+	// Get commit message from metadata if available
+	commitMessage := "No commit message available"
+	if msg, exists := event.Metadata["commit_message"]; exists && msg != "" {
+		commitMessage = msg
+	}
+
+	commit := CloudEventsCommit{
+		SHA:      event.CommitSHA,
+		ShortSHA: shortSHA,
+		Message:  commitMessage,
+	}
+
+	// Create previous commit data if available
+	var previousCommit *CloudEventsCommit
+	if event.PrevCommit != "" {
+		var prevShortSHA string
+		if len(event.PrevCommit) >= 8 {
+			prevShortSHA = event.PrevCommit[:8]
+		} else {
+			prevShortSHA = event.PrevCommit
+		}
+		previousCommit = &CloudEventsCommit{
+			SHA:      event.PrevCommit,
+			ShortSHA: prevShortSHA,
+		}
+	}
+
+	// Create event data - convert EventType to string
+	var eventTypeStr string
+	switch event.Type {
+	case types.EventTypeBranchUpdated:
+		eventTypeStr = "branch_updated"
+	case types.EventTypeBranchCreated:
+		eventTypeStr = "branch_created"
+	case types.EventTypeBranchDeleted:
+		eventTypeStr = "branch_deleted"
+	default:
+		eventTypeStr = "unknown"
+	}
+
+	eventData := CloudEventsEvent{
+		Type:          eventTypeStr,
+		TriggerSource: "reposentry",
+		TriggerID:     fmt.Sprintf("reposentry-%s-%d", strings.ToLower(repoInfo.Provider), event.Timestamp.Unix()),
+		DetectionTime: event.Timestamp.Format(time.RFC3339),
+	}
+
+	// Create CloudEvents payload
+	payload := CloudEventsPayload{
+		SpecVersion:     "1.0",
+		Type:            fmt.Sprintf("dev.reposentry.repository.%s", eventTypeStr),
+		Source:          fmt.Sprintf("reposentry/%s", strings.ToLower(repoInfo.Provider)),
+		ID:              fmt.Sprintf("event_%s_%s", commit.ShortSHA, event.Timestamp.Format("20060102_150405")),
+		Time:            event.Timestamp.Format(time.RFC3339),
+		DataContentType: "application/json",
+		Data: CloudEventsData{
+			Repository:     repository,
+			Branch:         branch,
+			Commit:         commit,
+			Event:          eventData,
+			PreviousCommit: previousCommit,
+		},
+	}
+
+	t.logger.WithFields(logger.Fields{
+		"operation":          "transform_to_cloudevents",
+		"event_id":           event.ID,
+		"cloudevents_id":     payload.ID,
+		"cloudevents_type":   payload.Type,
+		"cloudevents_source": payload.Source,
+		"repository":         payload.Data.Repository.FullName,
+		"provider":           payload.Data.Repository.Provider,
+		"organization":       payload.Data.Repository.Organization,
+	}).Info("Successfully transformed event to CloudEvents format")
+
+	return payload, nil
 }
 
 // TransformToGitHub transforms event to GitHub webhook format
 func (t *EventTransformerImpl) TransformToGitHub(event types.Event) (GitHubPayload, error) {
 	t.logger.WithFields(logger.Fields{
-		"operation": "transform_to_github",
-		"event_id":  event.ID,
+		"operation":  "transform_to_github",
+		"event_id":   event.ID,
 		"event_type": event.Type,
 	}).Debug("Transforming event to GitHub format")
 
@@ -63,12 +184,12 @@ func (t *EventTransformerImpl) TransformToGitHub(event types.Event) (GitHubPaylo
 	}
 
 	t.logger.WithFields(logger.Fields{
-		"operation":   "transform_to_github",
-		"event_id":    event.ID,
-		"repository":  payload.Repository.Name,
-		"commit_sha":  payload.After,
-		"short_sha":   payload.ShortSHA,
-		"ref":         payload.Ref,
+		"operation":  "transform_to_github",
+		"event_id":   event.ID,
+		"repository": payload.Repository.Name,
+		"commit_sha": payload.After,
+		"short_sha":  payload.ShortSHA,
+		"ref":        payload.Ref,
 	}).Info("Successfully transformed event to GitHub format")
 
 	return payload, nil
@@ -77,8 +198,8 @@ func (t *EventTransformerImpl) TransformToGitHub(event types.Event) (GitHubPaylo
 // TransformToTekton transforms event to Tekton EventListener format
 func (t *EventTransformerImpl) TransformToTekton(event types.Event) (TektonPayload, error) {
 	t.logger.WithFields(logger.Fields{
-		"operation": "transform_to_tekton",
-		"event_id":  event.ID,
+		"operation":  "transform_to_tekton",
+		"event_id":   event.ID,
 		"event_type": event.Type,
 	}).Debug("Transforming event to Tekton format")
 
@@ -95,7 +216,32 @@ func (t *EventTransformerImpl) TransformToTekton(event types.Event) (TektonPaylo
 	metadata["protected"] = t.getBranchProtection(event)
 	metadata["reposentry_event_id"] = event.ID
 	metadata["reposentry_timestamp"] = event.Timestamp.Format(time.RFC3339)
-	
+
+	// Enhanced metadata for better identification
+	metadata["branch"] = event.Branch
+	metadata["repository_name"] = event.Repository
+	metadata["commit_sha"] = event.CommitSHA
+	metadata["short_sha"] = ""
+	if len(event.CommitSHA) >= 8 {
+		metadata["short_sha"] = event.CommitSHA[:8]
+	}
+
+	// Extract organization from repository name (e.g., "johnnynv/TaaP_POC" -> "johnnynv")
+	repoParts := strings.Split(event.Repository, "/")
+	if len(repoParts) >= 1 {
+		metadata["organization"] = repoParts[0]
+	}
+	if len(repoParts) >= 2 {
+		metadata["project_name"] = repoParts[len(repoParts)-1] // Last part is project name
+	}
+
+	// Generate unique identifier for this repository + provider combination
+	metadata["repository_id"] = fmt.Sprintf("%s-%s", event.Provider, strings.ReplaceAll(event.Repository, "/", "-"))
+
+	// Add trigger context for debugging
+	metadata["trigger_source"] = "reposentry"
+	metadata["trigger_id"] = fmt.Sprintf("reposentry-%s-%d", event.Provider, event.Timestamp.Unix())
+
 	// Add custom metadata from event
 	for key, value := range event.Metadata {
 		metadata["custom_"+key] = value
@@ -110,10 +256,10 @@ func (t *EventTransformerImpl) TransformToTekton(event types.Event) (TektonPaylo
 	}
 
 	t.logger.WithFields(logger.Fields{
-		"operation":    "transform_to_tekton",
-		"event_id":     event.ID,
-		"repository":   payload.Repository.Name,
-		"source":       payload.Source,
+		"operation":      "transform_to_tekton",
+		"event_id":       event.ID,
+		"repository":     payload.Repository.Name,
+		"source":         payload.Source,
 		"metadata_count": len(payload.Metadata),
 	}).Info("Successfully transformed event to Tekton format")
 
@@ -123,8 +269,8 @@ func (t *EventTransformerImpl) TransformToTekton(event types.Event) (TektonPaylo
 // TransformToGeneric transforms event to generic webhook format
 func (t *EventTransformerImpl) TransformToGeneric(event types.Event) (GenericPayload, error) {
 	t.logger.WithFields(logger.Fields{
-		"operation": "transform_to_generic",
-		"event_id":  event.ID,
+		"operation":  "transform_to_generic",
+		"event_id":   event.ID,
 		"event_type": event.Type,
 	}).Debug("Transforming event to generic format")
 
@@ -181,10 +327,10 @@ func (t *EventTransformerImpl) TransformToGeneric(event types.Event) (GenericPay
 func (t *EventTransformerImpl) extractRepositoryInfo(event types.Event) (repositoryInfo, error) {
 	// Try to get repository URL from metadata first
 	repoURL, hasURL := event.Metadata["repository_url"]
-	
+
 	var repoInfo *RepositoryInfo
 	var err error
-	
+
 	if hasURL && repoURL != "" {
 		// Parse the repository URL using our intelligent parser
 		repoInfo, err = t.urlParser.ParseRepositoryURL(repoURL)
@@ -197,7 +343,7 @@ func (t *EventTransformerImpl) extractRepositoryInfo(event types.Event) (reposit
 			}).Warn("Failed to parse repository URL from metadata, using fallback")
 		}
 	}
-	
+
 	// Fallback: construct from available information
 	if repoInfo == nil {
 		t.logger.WithFields(logger.Fields{
@@ -206,13 +352,13 @@ func (t *EventTransformerImpl) extractRepositoryInfo(event types.Event) (reposit
 			"repository": event.Repository,
 			"provider":   event.Provider,
 		}).Debug("Using fallback repository info construction")
-		
+
 		// Use the URLParser to build URLs from components
 		// For fallback, we need to determine instance (default to public instances)
 		instance := t.getDefaultInstance(event.Provider)
 		repoInfo = t.urlParser.BuildRepoURLs(instance, event.Repository, event.Provider)
 	}
-	
+
 	// Convert to legacy repositoryInfo format for compatibility
 	info := repositoryInfo{
 		FullName: repoInfo.FullName,
@@ -220,7 +366,7 @@ func (t *EventTransformerImpl) extractRepositoryInfo(event types.Event) (reposit
 		HTMLURL:  repoInfo.HTMLURL,
 		Private:  false, // Default to public (can be enhanced later)
 	}
-	
+
 	t.logger.WithFields(logger.Fields{
 		"operation":     "extract_repository_info",
 		"event_id":      event.ID,
@@ -310,5 +456,3 @@ func (t *EventTransformerImpl) createCommitFromEvent(event types.Event) *GitHubC
 
 	return commit
 }
-
-

@@ -27,10 +27,12 @@ func NewSQLiteStorage(config *types.SQLiteConfig) (*SQLiteStorage, error) {
 		return nil, fmt.Errorf("SQLite config is required")
 	}
 
-	// Ensure directory exists
-	dir := filepath.Dir(config.Path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create database directory: %w", err)
+	// Ensure directory exists (skip for in-memory database)
+	if config.Path != ":memory:" {
+		dir := filepath.Dir(config.Path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create database directory: %w", err)
+		}
 	}
 
 	// Open database
@@ -368,12 +370,12 @@ func (s *SQLiteStorage) GetStats(ctx context.Context) (*StorageStats, error) {
 
 	var stats SQLiteStats
 	var lastEventTimeStr, oldestPendingEventStr sql.NullString
-	
+
 	err := s.db.QueryRowContext(ctx, query).Scan(
 		&stats.TotalRepositories, &stats.TotalBranches, &stats.TotalEvents,
 		&stats.PendingEvents, &stats.FailedEvents, &lastEventTimeStr,
 		&oldestPendingEventStr)
-	
+
 	// Parse time strings
 	if lastEventTimeStr.Valid && lastEventTimeStr.String != "" {
 		if t, err := time.Parse(time.RFC3339, lastEventTimeStr.String); err == nil {
@@ -382,7 +384,7 @@ func (s *SQLiteStorage) GetStats(ctx context.Context) (*StorageStats, error) {
 			stats.LastEventTime = t
 		}
 	}
-	
+
 	if oldestPendingEventStr.Valid && oldestPendingEventStr.String != "" {
 		if t, err := time.Parse(time.RFC3339, oldestPendingEventStr.String); err == nil {
 			stats.OldestPendingEvent = t
@@ -472,18 +474,18 @@ func (s *SQLiteStorage) GetEvents(ctx context.Context, limit, offset int) ([]*ty
 		ORDER BY created_at DESC 
 		LIMIT ? OFFSET ?
 	`
-	
+
 	rows, err := s.db.QueryContext(ctx, query, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query events: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var events []*types.Event
 	for rows.Next() {
 		event := &types.Event{}
 		var metadata, errorMessage sql.NullString
-		
+
 		err := rows.Scan(
 			&event.ID,
 			&event.Type,
@@ -499,7 +501,7 @@ func (s *SQLiteStorage) GetEvents(ctx context.Context, limit, offset int) ([]*ty
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan event: %w", err)
 		}
-		
+
 		// Parse metadata JSON
 		if metadata.Valid && metadata.String != "" {
 			var metadataMap map[string]string
@@ -507,20 +509,18 @@ func (s *SQLiteStorage) GetEvents(ctx context.Context, limit, offset int) ([]*ty
 				event.Metadata = metadataMap
 			}
 		}
-		
+
 		if errorMessage.Valid {
 			event.ErrorMessage = errorMessage.String
 		}
-		
 
-		
 		events = append(events, event)
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate over events: %w", err)
 	}
-	
+
 	return events, nil
 }
 
@@ -533,18 +533,18 @@ func (s *SQLiteStorage) GetEventsSince(ctx context.Context, since time.Time) ([]
 		WHERE created_at >= ?
 		ORDER BY created_at DESC
 	`
-	
+
 	rows, err := s.db.QueryContext(ctx, query, since)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query events since %v: %w", since, err)
 	}
 	defer rows.Close()
-	
+
 	var events []*types.Event
 	for rows.Next() {
 		event := &types.Event{}
 		var metadata, errorMessage sql.NullString
-		
+
 		err := rows.Scan(
 			&event.ID,
 			&event.Type,
@@ -560,7 +560,7 @@ func (s *SQLiteStorage) GetEventsSince(ctx context.Context, since time.Time) ([]
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan event: %w", err)
 		}
-		
+
 		// Parse metadata JSON
 		if metadata.Valid && metadata.String != "" {
 			var metadataMap map[string]string
@@ -568,26 +568,23 @@ func (s *SQLiteStorage) GetEventsSince(ctx context.Context, since time.Time) ([]
 				event.Metadata = metadataMap
 			}
 		}
-		
+
 		if errorMessage.Valid {
 			event.ErrorMessage = errorMessage.String
 		}
-		
 
-		
 		events = append(events, event)
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate over events since %v: %w", since, err)
 	}
-	
+
 	return events, nil
 }
 
 // isUniqueConstraintError checks if error is a unique constraint violation
 func isUniqueConstraintError(err error) bool {
-	return err != nil && (
-		fmt.Sprintf("%v", err) == "UNIQUE constraint failed: events.id" ||
+	return err != nil && (fmt.Sprintf("%v", err) == "UNIQUE constraint failed: events.id" ||
 		fmt.Sprintf("%v", err) == "database is locked")
 }

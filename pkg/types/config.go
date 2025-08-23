@@ -6,24 +6,25 @@ import (
 
 // Config represents the main application configuration
 type Config struct {
-	App        AppConfig        `yaml:"app" json:"app"`
-	Polling    PollingConfig    `yaml:"polling" json:"polling"`
-	Storage    StorageConfig    `yaml:"storage" json:"storage"`
-	Tekton     TektonConfig     `yaml:"tekton" json:"tekton"`
-	RateLimit  RateLimitConfig  `yaml:"rate_limit" json:"rate_limit"`
-	Security   SecurityConfig   `yaml:"security" json:"security"`
-	Repositories []Repository   `yaml:"repositories" json:"repositories"`
+	App                AppConfig       `yaml:"app" json:"app"`
+	Polling            PollingConfig   `yaml:"polling" json:"polling"`
+	Storage            StorageConfig   `yaml:"storage" json:"storage"`
+	Tekton             TektonConfig    `yaml:"tekton" json:"tekton"`
+	RateLimit          RateLimitConfig `yaml:"rate_limit" json:"rate_limit"`
+	Security           SecurityConfig  `yaml:"security" json:"security"`
+	Repositories       []Repository    `yaml:"repositories,omitempty" json:"repositories,omitempty"`               // Legacy: repositories in main config
+	RepositoriesConfig string          `yaml:"repositories_config,omitempty" json:"repositories_config,omitempty"` // New: path to repositories config file
 }
 
 // AppConfig represents application-level configuration
 type AppConfig struct {
-	Name             string    `yaml:"name" json:"name"`
-	LogLevel         string    `yaml:"log_level" json:"log_level"`
-	LogFormat        string    `yaml:"log_format" json:"log_format"`
-	LogFile          string    `yaml:"log_file" json:"log_file,omitempty"`
-	LogFileRotation  LogFileConfig `yaml:"log_file_rotation" json:"log_file_rotation,omitempty"`
-	HealthCheckPort  int       `yaml:"health_check_port" json:"health_check_port"`
-	DataDir          string    `yaml:"data_dir" json:"data_dir"`
+	Name            string        `yaml:"name" json:"name"`
+	LogLevel        string        `yaml:"log_level" json:"log_level"`
+	LogFormat       string        `yaml:"log_format" json:"log_format"`
+	LogFile         string        `yaml:"log_file" json:"log_file,omitempty"`
+	LogFileRotation LogFileConfig `yaml:"log_file_rotation" json:"log_file_rotation,omitempty"`
+	HealthCheckPort int           `yaml:"health_check_port" json:"health_check_port"`
+	DataDir         string        `yaml:"data_dir" json:"data_dir"`
 }
 
 // LogFileConfig represents log file rotation configuration
@@ -36,19 +37,19 @@ type LogFileConfig struct {
 
 // PollingConfig represents polling-related configuration
 type PollingConfig struct {
-	Interval           time.Duration `yaml:"interval" json:"interval"`
-	Timeout            time.Duration `yaml:"timeout" json:"timeout"`
-	MaxWorkers         int           `yaml:"max_workers" json:"max_workers"`
-	BatchSize          int           `yaml:"batch_size" json:"batch_size"`
-	EnableAPIFallback  bool          `yaml:"enable_api_fallback" json:"enable_api_fallback"`
-	RetryAttempts      int           `yaml:"retry_attempts" json:"retry_attempts"`
-	RetryBackoff       time.Duration `yaml:"retry_backoff" json:"retry_backoff"`
+	Interval          time.Duration `yaml:"interval" json:"interval"`
+	Timeout           time.Duration `yaml:"timeout" json:"timeout"`
+	MaxWorkers        int           `yaml:"max_workers" json:"max_workers"`
+	BatchSize         int           `yaml:"batch_size" json:"batch_size"`
+	EnableAPIFallback bool          `yaml:"enable_api_fallback" json:"enable_api_fallback"`
+	RetryAttempts     int           `yaml:"retry_attempts" json:"retry_attempts"`
+	RetryBackoff      time.Duration `yaml:"retry_backoff" json:"retry_backoff"`
 }
 
 // StorageConfig represents storage configuration
 type StorageConfig struct {
-	Type   string        `yaml:"type" json:"type"`
-	SQLite SQLiteConfig  `yaml:"sqlite" json:"sqlite"`
+	Type   string       `yaml:"type" json:"type"`
+	SQLite SQLiteConfig `yaml:"sqlite" json:"sqlite"`
 }
 
 // SQLiteConfig represents SQLite-specific configuration
@@ -89,4 +90,17 @@ type GitLabRateLimit struct {
 type SecurityConfig struct {
 	AllowedEnvVars []string `yaml:"allowed_env_vars" json:"allowed_env_vars"`
 	RequireHTTPS   bool     `yaml:"require_https" json:"require_https"`
+}
+
+// RepositoriesConfig represents a separate repositories configuration file
+type RepositoriesConfig struct {
+	Repositories   []Repository             `yaml:"repositories" json:"repositories"`
+	GlobalSettings RepositoryGlobalSettings `yaml:"global_settings,omitempty" json:"global_settings,omitempty"`
+}
+
+// RepositoryGlobalSettings represents global repository settings
+type RepositoryGlobalSettings struct {
+	DefaultPollingEnabled   bool `yaml:"default_polling_enabled" json:"default_polling_enabled"`
+	DefaultWebhookEnabled   bool `yaml:"default_webhook_enabled" json:"default_webhook_enabled"`
+	DefaultBranchProtection bool `yaml:"default_branch_protection" json:"default_branch_protection"`
 }

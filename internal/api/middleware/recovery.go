@@ -14,16 +14,16 @@ func Recovery(log *logger.Entry) func(http.Handler) http.Handler {
 			defer func() {
 				if err := recover(); err != nil {
 					log.WithFields(logger.Fields{
-						"error": err,
-						"stack": string(debug.Stack()),
-						"path":  r.URL.Path,
+						"error":  err,
+						"stack":  string(debug.Stack()),
+						"path":   r.URL.Path,
 						"method": r.Method,
 					}).Error("Panic recovered in HTTP handler")
-					
+
 					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				}
 			}()
-			
+
 			next.ServeHTTP(w, r)
 		})
 	}

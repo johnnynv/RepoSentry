@@ -31,7 +31,7 @@ type Storage interface {
 	GetEventsSince(ctx context.Context, since time.Time) ([]*types.Event, error)
 	UpdateEventStatus(ctx context.Context, eventID string, status types.EventStatus) error
 	DeleteOldEvents(ctx context.Context, before time.Time) (int64, error)
-	
+
 	// Enhanced repository state operations for poller
 	UpsertRepoState(ctx context.Context, state RepositoryState) error
 
@@ -41,14 +41,14 @@ type Storage interface {
 
 // StorageStats represents storage statistics
 type StorageStats struct {
-	TotalRepositories    int64     `json:"total_repositories"`
-	TotalBranches        int64     `json:"total_branches"`
-	TotalEvents          int64     `json:"total_events"`
-	PendingEvents        int64     `json:"pending_events"`
-	FailedEvents         int64     `json:"failed_events"`
-	LastEventTime        time.Time `json:"last_event_time,omitempty"`
-	OldestPendingEvent   time.Time `json:"oldest_pending_event,omitempty"`
-	DatabaseSize         int64     `json:"database_size_bytes,omitempty"`
+	TotalRepositories  int64     `json:"total_repositories"`
+	TotalBranches      int64     `json:"total_branches"`
+	TotalEvents        int64     `json:"total_events"`
+	PendingEvents      int64     `json:"pending_events"`
+	FailedEvents       int64     `json:"failed_events"`
+	LastEventTime      time.Time `json:"last_event_time,omitempty"`
+	OldestPendingEvent time.Time `json:"oldest_pending_event,omitempty"`
+	DatabaseSize       int64     `json:"database_size_bytes,omitempty"`
 }
 
 // StorageConfig represents storage configuration interface

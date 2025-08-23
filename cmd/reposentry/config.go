@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/johnnynv/RepoSentry/internal/config"
 	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
@@ -37,24 +37,24 @@ var initCmd = &cobra.Command{
 }
 
 var (
-	showFormat      string
-	showSecrets     bool
-	initForce       bool
-	initTemplate    string
+	showFormat   string
+	showSecrets  bool
+	initForce    bool
+	initTemplate string
 )
 
 func init() {
 	// Show command flags
 	showCmd.Flags().StringVar(&showFormat, "format", "yaml", "Output format (yaml, json)")
 	showCmd.Flags().BoolVar(&showSecrets, "show-secrets", false, "Show sensitive values (tokens, passwords)")
-	
+
 	// Init command flags
 	initCmd.Flags().BoolVar(&initForce, "force", false, "Overwrite existing configuration file")
 	initCmd.Flags().StringVar(&initTemplate, "template", "basic", "Configuration template (basic, advanced, minimal)")
-	
+
 	configCmd.AddCommand(showCmd)
 	configCmd.AddCommand(initCmd)
-	
+
 	rootCmd.AddCommand(configCmd)
 }
 
@@ -71,7 +71,7 @@ func runShowConfig(cmd *cobra.Command, args []string) error {
 
 	// Initialize logger
 	appLogger := logger.GetDefaultLogger()
-	
+
 	// Load configuration
 	configManager := config.NewManager(appLogger)
 	err := configManager.Load(configFile)
@@ -93,14 +93,14 @@ func runShowConfig(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to marshal JSON: %w", err)
 		}
 		fmt.Println(string(jsonBytes))
-		
+
 	case "yaml":
 		yamlBytes, err := yaml.Marshal(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to marshal YAML: %w", err)
 		}
 		fmt.Print(string(yamlBytes))
-		
+
 	default:
 		return fmt.Errorf("unsupported format: %s (supported: yaml, json)", showFormat)
 	}
@@ -128,7 +128,7 @@ func runInitConfig(cmd *cobra.Command, args []string) error {
 
 	// Generate configuration based on template
 	var cfg *types.Config
-	
+
 	switch initTemplate {
 	case "minimal":
 		cfg = generateMinimalConfig()
@@ -162,16 +162,16 @@ func runInitConfig(cmd *cobra.Command, args []string) error {
 func maskSensitiveData(cfg *types.Config) *types.Config {
 	// Create a copy to avoid modifying original
 	result := *cfg
-	
+
 	// Mask repository tokens
 	for i := range result.Repositories {
 		if result.Repositories[i].Token != "" {
 			result.Repositories[i].Token = "***MASKED***"
 		}
 	}
-	
+
 	// TODO: Mask Tekton auth token when field is available
-	
+
 	return &result
 }
 
@@ -219,40 +219,40 @@ func generateMinimalConfig() *types.Config {
 
 func generateBasicConfig() *types.Config {
 	cfg := generateMinimalConfig()
-	
+
 	// Add more examples
 	cfg.Repositories = append(cfg.Repositories, types.Repository{
 		Name:            "gitlab-repo",
 		URL:             "https://gitlab.com/example/repo",
-					Provider:        "gitlab",
-			Token:           "${GITLAB_TOKEN}",
-			BranchRegex:     "^(main|develop|release/.*)$",
-			PollingInterval: 10 * time.Minute,
+		Provider:        "gitlab",
+		Token:           "${GITLAB_TOKEN}",
+		BranchRegex:     "^(main|develop|release/.*)$",
+		PollingInterval: 10 * time.Minute,
 	})
-	
+
 	// Add some headers and auth
 	cfg.Tekton.Headers = map[string]string{
 		"X-Custom-Header": "reposentry",
 	}
-	
+
 	return cfg
 }
 
 func generateAdvancedConfig() *types.Config {
 	cfg := generateBasicConfig()
-	
+
 	// More advanced settings
 	cfg.App.LogFile = "./logs/reposentry.log"
 	// TODO: Add log file rotation configuration when available
-	
+
 	cfg.Polling.MaxWorkers = 5
 	cfg.Polling.BatchSize = 10
-	
+
 	cfg.Storage.SQLite.MaxConnections = 20
-	
+
 	cfg.Tekton.Timeout = 60 * time.Second
 	// TODO: Add TLS configuration when available
-	
+
 	// Add enterprise GitLab example
 	cfg.Repositories = append(cfg.Repositories, types.Repository{
 		Name:            "enterprise-gitlab",
@@ -262,6 +262,6 @@ func generateAdvancedConfig() *types.Config {
 		BranchRegex:     "^(main|staging|production)$",
 		PollingInterval: 15 * time.Minute,
 	})
-	
+
 	return cfg
 }

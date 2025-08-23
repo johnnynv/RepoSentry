@@ -1,0 +1,95 @@
+# RepoSentry End-to-End Test Configuration
+# 端到端测试配置文件
+# 位置: test/config-e2e-test.yaml
+
+app:
+  name: "reposentry-e2e-test"
+  log_level: "debug"
+  log_format: "text"
+  health_check_port: 8080
+  data_dir: "./test/data"  # 测试数据也放在test目录下
+
+# 轮询配置
+polling:
+  interval: "1m"           # 全局轮询间隔（最小：1分钟，保护API配额）
+  timeout: "30s"
+  max_workers: 2
+  batch_size: 5
+  enable_api_fallback: true
+  retry_attempts: 2
+  retry_backoff: "2s"
+
+# 存储配置
+storage:
+  type: "sqlite"
+  sqlite:
+    path: "./test/data/reposentry-e2e-test.db"  # 测试数据库放在test目录
+    max_connections: 5
+    connection_timeout: "30s"
+
+# Tekton 配置 - 使用新创建的 RepoSentry EventListener
+tekton:
+  event_listener_url: "http://10.78.14.61:30081"
+  timeout: "30s"
+  retry_attempts: 3
+  retry_backoff: "2s"
+  headers:
+    X-Source: "reposentry-e2e-test"
+    Content-Type: "application/json"
+    X-Environment: "test"
+
+# 仓库配置 - 使用环境变量获取敏感信息
+repositories:
+  # GitHub 测试仓库
+  - name: "taap-poc-github"
+    url: "https://github.com/johnnynv/TaaP_POC.git"
+    provider: "github"
+    token: "${GITHUB_TOKEN}"  # 从环境变量读取，安全最佳实践
+    branch_regex: "^(main|dev)$"
+    enabled: true
+    polling_interval: "1m"   # 最小允许间隔：1分钟（安全限制，防止API滥用）
+    
+  # GitLab 测试仓库
+  - name: "taap-poc-gitlab"
+    url: "https://gitlab-master.nvidia.com/johnnyj/taap_poc_gitlab.git"
+    provider: "gitlab"
+    token: "${GITLAB_TOKEN}"  # 从环境变量读取，安全最佳实践
+    branch_regex: "^main$"
+    enabled: true
+    polling_interval: "1m"   # 最小允许间隔：1分钟（安全限制，防止API滥用）
+    api_base_url: "https://gitlab-master.nvidia.com/api/v4"
+
+# 速率限制配置
+rate_limit:
+  github:
+    requests_per_hour: 4000
+    burst: 5
+  gitlab:
+    requests_per_second: 8
+    burst: 3
+
+# 安全设置
+security:
+  # 允许的环境变量列表 - 安全最佳实践
+  allowed_env_vars:
+    - "GITHUB_TOKEN"
+    - "GITLAB_TOKEN"
+    - "TEKTON_*"
+  
+  # 强制使用 HTTPS
+  require_https: true
+
+# API 配置
+api:
+  enabled: true
+  port: 8080
+  cors:
+    enabled: true
+    allowed_origins:
+      - "*"
+  
+# 监控配置
+monitoring:
+  metrics_enabled: true
+  health_check_enabled: true
+  prometheus_enabled: true

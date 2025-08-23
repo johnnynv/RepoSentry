@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-
 	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
 )
@@ -27,9 +26,9 @@ type GitHubClient struct {
 
 // GitHubBranch represents a branch response from GitHub API
 type GitHubBranch struct {
-	Name      string `json:"name"`
+	Name      string       `json:"name"`
 	Commit    GitHubCommit `json:"commit"`
-	Protected bool   `json:"protected"`
+	Protected bool         `json:"protected"`
 }
 
 // GitHubCommit represents a commit in GitHub API response
@@ -59,7 +58,7 @@ type GitHubRateLimit struct {
 }
 
 // NewGitHubClient creates a new GitHub client
-func NewGitHubClient(config ClientConfig, rateLimiter RateLimiter, fallback *FallbackClient) (*GitHubClient, error) {
+func NewGitHubClient(config ClientConfig, rateLimiter RateLimiter, fallback *FallbackClient, parentLogger *logger.Entry) (*GitHubClient, error) {
 	if config.Token == "" {
 		return nil, fmt.Errorf("GitHub token is required")
 	}
@@ -73,7 +72,7 @@ func NewGitHubClient(config ClientConfig, rateLimiter RateLimiter, fallback *Fal
 		Timeout: config.Timeout,
 	}
 
-	clientLogger := logger.GetDefaultLogger().WithFields(logger.Fields{
+	clientLogger := parentLogger.WithFields(logger.Fields{
 		"component": "gitclient",
 		"provider":  "github",
 		"base_url":  baseURL,
@@ -94,17 +93,17 @@ func NewGitHubClient(config ClientConfig, rateLimiter RateLimiter, fallback *Fal
 // GetBranches retrieves all branches for a repository
 func (c *GitHubClient) GetBranches(ctx context.Context, repo types.Repository) ([]types.Branch, error) {
 	c.logger.WithFields(logger.Fields{
-		"operation": "get_branches",
+		"operation":  "get_branches",
 		"repository": repo.Name,
-		"url": repo.URL,
+		"url":        repo.URL,
 	}).Info("Starting branch retrieval")
 
 	owner, repoName, err := c.parseRepoURL(repo.URL)
 	if err != nil {
 		c.logger.WithError(err).WithFields(logger.Fields{
-			"operation": "get_branches",
+			"operation":  "get_branches",
 			"repository": repo.Name,
-			"url": repo.URL,
+			"url":        repo.URL,
 		}).Error("Failed to parse repository URL")
 		if c.config.EnableFallback {
 			c.logger.Info("Attempting fallback for branch retrieval")
@@ -115,12 +114,12 @@ func (c *GitHubClient) GetBranches(ctx context.Context, repo types.Repository) (
 
 	// Wait for rate limiter
 	c.logger.WithFields(logger.Fields{
-		"operation": "get_branches",
+		"operation":  "get_branches",
 		"repository": repo.Name,
 	}).Debug("Waiting for rate limiter")
 	if err := c.rateLimiter.Wait(ctx); err != nil {
 		c.logger.WithError(err).WithFields(logger.Fields{
-			"operation": "get_branches",
+			"operation":  "get_branches",
 			"repository": repo.Name,
 		}).Error("Rate limiter wait failed")
 		return nil, err
@@ -128,17 +127,17 @@ func (c *GitHubClient) GetBranches(ctx context.Context, repo types.Repository) (
 
 	url := fmt.Sprintf("%s/repos/%s/%s/branches", c.baseURL, owner, repoName)
 	c.logger.WithFields(logger.Fields{
-		"operation": "get_branches",
+		"operation":  "get_branches",
 		"repository": repo.Name,
-		"url": url,
+		"url":        url,
 	}).Debug("Making API request")
-	
+
 	var githubBranches []GitHubBranch
 	if err := c.makeRequest(ctx, "GET", url, nil, &githubBranches); err != nil {
 		c.logger.WithError(err).WithFields(logger.Fields{
-			"operation": "get_branches",
+			"operation":  "get_branches",
 			"repository": repo.Name,
-			"url": url,
+			"url":        url,
 		}).Error("API request failed")
 		if c.config.EnableFallback && IsRetryableError(err) {
 			c.logger.Info("Attempting fallback after API failure")
@@ -158,8 +157,8 @@ func (c *GitHubClient) GetBranches(ctx context.Context, repo types.Repository) (
 	}
 
 	c.logger.WithFields(logger.Fields{
-		"operation": "get_branches",
-		"repository": repo.Name,
+		"operation":    "get_branches",
+		"repository":   repo.Name,
 		"branch_count": len(branches),
 	}).Info("Successfully retrieved branches")
 
@@ -169,17 +168,17 @@ func (c *GitHubClient) GetBranches(ctx context.Context, repo types.Repository) (
 // GetLatestCommit retrieves the latest commit SHA for a branch
 func (c *GitHubClient) GetLatestCommit(ctx context.Context, repo types.Repository, branch string) (string, error) {
 	c.logger.WithFields(logger.Fields{
-		"operation": "get_latest_commit",
+		"operation":  "get_latest_commit",
 		"repository": repo.Name,
-		"branch": branch,
+		"branch":     branch,
 	}).Info("Starting latest commit retrieval")
 
 	owner, repoName, err := c.parseRepoURL(repo.URL)
 	if err != nil {
 		c.logger.WithError(err).WithFields(logger.Fields{
-			"operation": "get_latest_commit",
+			"operation":  "get_latest_commit",
 			"repository": repo.Name,
-			"branch": branch,
+			"branch":     branch,
 		}).Error("Failed to parse repository URL")
 		if c.config.EnableFallback {
 			c.logger.Info("Attempting fallback for latest commit")
@@ -194,14 +193,14 @@ func (c *GitHubClient) GetLatestCommit(ctx context.Context, repo types.Repositor
 	}
 
 	url := fmt.Sprintf("%s/repos/%s/%s/branches/%s", c.baseURL, owner, repoName, branch)
-	
+
 	var githubBranch GitHubBranch
 	if err := c.makeRequest(ctx, "GET", url, nil, &githubBranch); err != nil {
 		c.logger.WithError(err).WithFields(logger.Fields{
-			"operation": "get_latest_commit",
+			"operation":  "get_latest_commit",
 			"repository": repo.Name,
-			"branch": branch,
-			"url": url,
+			"branch":     branch,
+			"url":        url,
 		}).Error("API request failed")
 		if c.config.EnableFallback && IsRetryableError(err) {
 			c.logger.Info("Attempting fallback after API failure")
@@ -211,9 +210,9 @@ func (c *GitHubClient) GetLatestCommit(ctx context.Context, repo types.Repositor
 	}
 
 	c.logger.WithFields(logger.Fields{
-		"operation": "get_latest_commit",
+		"operation":  "get_latest_commit",
 		"repository": repo.Name,
-		"branch": branch,
+		"branch":     branch,
 		"commit_sha": githubBranch.Commit.SHA,
 	}).Info("Successfully retrieved latest commit")
 
@@ -223,14 +222,14 @@ func (c *GitHubClient) GetLatestCommit(ctx context.Context, repo types.Repositor
 // CheckPermissions verifies if the client has access to the repository
 func (c *GitHubClient) CheckPermissions(ctx context.Context, repo types.Repository) error {
 	c.logger.WithFields(logger.Fields{
-		"operation": "check_permissions",
+		"operation":  "check_permissions",
 		"repository": repo.Name,
 	}).Info("Checking repository permissions")
 
 	owner, repoName, err := c.parseRepoURL(repo.URL)
 	if err != nil {
 		c.logger.WithError(err).WithFields(logger.Fields{
-			"operation": "check_permissions",
+			"operation":  "check_permissions",
 			"repository": repo.Name,
 		}).Error("Failed to parse repository URL")
 		return err
@@ -242,7 +241,7 @@ func (c *GitHubClient) CheckPermissions(ctx context.Context, repo types.Reposito
 	}
 
 	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, owner, repoName)
-	
+
 	var githubRepo GitHubRepository
 	if err := c.makeRequest(ctx, "GET", url, nil, &githubRepo); err != nil {
 		return err
@@ -254,14 +253,14 @@ func (c *GitHubClient) CheckPermissions(ctx context.Context, repo types.Reposito
 // GetRateLimit returns current rate limit status
 func (c *GitHubClient) GetRateLimit(ctx context.Context) (*types.RateLimit, error) {
 	url := fmt.Sprintf("%s/rate_limit", c.baseURL)
-	
+
 	var rateLimitResp GitHubRateLimit
 	if err := c.makeRequest(ctx, "GET", url, nil, &rateLimitResp); err != nil {
 		return nil, err
 	}
 
 	resetTime := time.Unix(int64(rateLimitResp.Resources.Core.Reset), 0)
-	
+
 	return &types.RateLimit{
 		Limit:     rateLimitResp.Resources.Core.Limit,
 		Remaining: rateLimitResp.Resources.Core.Remaining,
@@ -352,18 +351,29 @@ func (c *GitHubClient) makeRequest(ctx context.Context, method, url string, body
 
 // parseRepoURL extracts owner and repository name from GitHub URL
 func (c *GitHubClient) parseRepoURL(repoURL string) (owner, repo string, err error) {
+	// Clean and normalize the URL
+	repoURL = strings.TrimSpace(repoURL)
+
 	parsedURL, err := url.Parse(repoURL)
 	if err != nil {
 		return "", "", fmt.Errorf("invalid repository URL: %w", err)
 	}
 
-	// Handle GitHub URLs: https://github.com/owner/repo
+	// Handle GitHub URLs: https://github.com/owner/repo or https://github.com/owner/repo.git
 	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
 	if len(pathParts) < 2 {
 		return "", "", fmt.Errorf("invalid GitHub repository URL format: %s", repoURL)
 	}
 
-	return pathParts[0], pathParts[1], nil
+	owner = pathParts[0]
+	repo = pathParts[1]
+
+	// Remove .git suffix if present
+	if strings.HasSuffix(repo, ".git") {
+		repo = strings.TrimSuffix(repo, ".git")
+	}
+
+	return owner, repo, nil
 }
 
 // updateRateLimitFromHeaders updates the rate limiter based on response headers

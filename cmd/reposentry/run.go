@@ -8,11 +8,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/johnnynv/RepoSentry/internal/config"
 	"github.com/johnnynv/RepoSentry/internal/runtime"
 	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
+	"github.com/spf13/cobra"
 )
 
 var runCmd = &cobra.Command{
@@ -25,57 +25,80 @@ monitors repositories for changes according to the configuration.`,
 }
 
 var (
-	configFile     string
-	logLevel       string
-	logFormat      string
-	logFile        string
-	healthPort     int
-	daemonMode     bool
-	pidFile        string
+	configFile string
+	logLevel   string
+	logFormat  string
+	logFile    string
+	healthPort int
+	daemonMode bool
+	pidFile    string
 )
 
 func init() {
 	// Add run command to root
 	rootCmd.AddCommand(runCmd)
-	
+
 	// Configuration flags
-	runCmd.Flags().StringVarP(&configFile, "config", "c", "", "Configuration file path (required)")
-	runCmd.Flags().StringVarP(&logLevel, "log-level", "l", "info", "Log level (debug, info, warn, error)")
+	runCmd.Flags().StringVarP(&configFile, "config", "c", "config.yaml", "Configuration file path")
+	runCmd.Flags().StringVarP(&logLevel, "log-level", "l", "debug", "Log level (debug, info, warn, error)")
 	runCmd.Flags().StringVar(&logFormat, "log-format", "json", "Log format (json, text)")
-	runCmd.Flags().StringVar(&logFile, "log-file", "", "Log file path (optional, logs to stdout if not specified)")
-	runCmd.Flags().IntVar(&healthPort, "health-port", 0, "Health check server port (0 to disable)")
+	runCmd.Flags().StringVar(&logFile, "log-file", "./logs/reposentry.log", "Log file path")
+	runCmd.Flags().IntVar(&healthPort, "health-port", 8080, "Health check server port (0 to disable)")
 	runCmd.Flags().BoolVarP(&daemonMode, "daemon", "d", false, "Run in daemon mode (background)")
 	runCmd.Flags().StringVar(&pidFile, "pid-file", "", "PID file path (daemon mode only)")
-	
-	// Mark config as required
-	runCmd.MarkFlagRequired("config")
+
+	// Config has sensible defaults, no longer required
 }
 
 func runRepoSentry(cmd *cobra.Command, args []string) error {
-	// Initialize logger first
-	appLogger, err := initializeLogger()
-	if err != nil {
-		return fmt.Errorf("failed to initialize logger: %w", err)
+	// Initialize enterprise logger system
+	loggerConfig := logger.DefaultConfig()
+	if logLevel != "" {
+		loggerConfig.Level = logLevel
+	}
+	if logFile != "" {
+		loggerConfig.Output = logFile
 	}
 
-	appLogger.WithFields(logger.Fields{
-		"operation": "startup",
+	loggerManager, err := logger.NewManager(loggerConfig)
+	if err != nil {
+		return fmt.Errorf("failed to initialize logger manager: %w", err)
+	}
+
+	// Create business logger for future use
+	_ = logger.NewBusinessLogger(loggerManager)
+
+	// Create startup context
+	ctx := context.Background()
+	startupCtx := logger.WithContext(ctx, logger.LogContext{
+		Component: "app",
+		Module:    "startup",
+		Operation: "run",
+	})
+
+	startupLogger := loggerManager.WithGoContext(startupCtx)
+	startupLogger.WithFields(logger.Fields{
 		"config":    configFile,
 		"log_level": logLevel,
 		"daemon":    daemonMode,
-	}).Info("Starting RepoSentry")
+	}).Info("Starting RepoSentry with enterprise logging")
 
 	// Handle daemon mode
 	if daemonMode {
-		if err := handleDaemonMode(appLogger); err != nil {
+		if err := handleDaemonMode(startupLogger); err != nil {
 			return fmt.Errorf("failed to start in daemon mode: %w", err)
 		}
 	}
 
 	// Load configuration
-	configManager := config.NewManager(appLogger)
+	configManager := config.NewManager(loggerManager.GetRootLogger())
 	if err := configManager.Load(configFile); err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	// Reconfigure logger based on configuration file if needed
+	if loggerConfig := configManager.GetLoggerConfig(); loggerConfig.Output != "" {
+		startupLogger.Info("Logger already configured with enterprise system")
 	}
 
 	// Get configuration
@@ -85,11 +108,11 @@ func runRepoSentry(cmd *cobra.Command, args []string) error {
 	}
 
 	// Override configuration with CLI flags
-	overrideConfigFromFlags(cfg, appLogger)
+	overrideConfigFromFlags(cfg, startupLogger)
 
-	// Create runtime factory and runtime
+	// Create runtime factory and runtime with logger manager
 	factory := runtime.NewDefaultRuntimeFactory()
-	rt, err := factory.CreateRuntime(cfg)
+	rt, err := factory.CreateRuntime(cfg, loggerManager)
 	if err != nil {
 		return fmt.Errorf("failed to create runtime: %w", err)
 	}
@@ -110,15 +133,15 @@ func runRepoSentry(cmd *cobra.Command, args []string) error {
 			return
 		}
 
-		appLogger.WithFields(logger.Fields{
-			"operation": "running",
+		startupLogger.WithFields(logger.Fields{
+			"operation":   "running",
 			"health_port": cfg.App.HealthCheckPort,
 		}).Info("RepoSentry is running successfully")
 
 		// Keep running until context is cancelled
 		<-ctx.Done()
-		
-		appLogger.WithFields(logger.Fields{
+
+		startupLogger.WithFields(logger.Fields{
 			"operation": "shutdown",
 		}).Info("Initiating graceful shutdown")
 
@@ -137,55 +160,55 @@ func runRepoSentry(cmd *cobra.Command, args []string) error {
 	for {
 		select {
 		case sig := <-sigChan:
-			appLogger.WithFields(logger.Fields{
+			startupLogger.WithFields(logger.Fields{
 				"signal": sig.String(),
 			}).Info("Received signal")
 
 			switch sig {
 			case syscall.SIGHUP:
 				// Reload configuration
-				appLogger.Info("Reloading configuration")
+				startupLogger.Info("Reloading configuration")
 				if err := configManager.Reload(); err != nil {
-					appLogger.WithFields(logger.Fields{
+					startupLogger.WithFields(logger.Fields{
 						"error": err.Error(),
 					}).Error("Failed to reload configuration")
 				} else {
-					appLogger.Info("Configuration reloaded successfully")
+					startupLogger.Info("Configuration reloaded successfully")
 					// TODO: Implement selective component restart based on config changes
 					if err := rt.Reload(ctx); err != nil {
-						appLogger.WithFields(logger.Fields{
+						startupLogger.WithFields(logger.Fields{
 							"error": err.Error(),
 						}).Error("Failed to reload runtime")
 					}
 				}
 			case syscall.SIGINT, syscall.SIGTERM:
 				// Graceful shutdown
-				appLogger.WithFields(logger.Fields{
+				startupLogger.WithFields(logger.Fields{
 					"signal": sig.String(),
 				}).Info("Initiating graceful shutdown")
 				cancel()
-				
+
 				// Wait for runtime to stop
 				if err := <-runtimeErrChan; err != nil {
-					appLogger.WithFields(logger.Fields{
+					startupLogger.WithFields(logger.Fields{
 						"error": err.Error(),
 					}).Error("Error during shutdown")
 					return err
 				}
-				
-				appLogger.Info("RepoSentry stopped successfully")
+
+				startupLogger.Info("RepoSentry stopped successfully")
 				return nil
 			}
 
 		case err := <-runtimeErrChan:
 			if err != nil {
-				appLogger.WithFields(logger.Fields{
+				startupLogger.WithFields(logger.Fields{
 					"error": err.Error(),
 				}).Error("Runtime error")
 				return err
 			}
 			// Normal shutdown
-			appLogger.Info("RepoSentry stopped successfully")
+			startupLogger.Info("RepoSentry stopped successfully")
 			return nil
 		}
 	}
@@ -214,11 +237,29 @@ func initializeLogger() (*logger.Logger, error) {
 	return logger.NewLogger(logConfig)
 }
 
-func overrideConfigFromFlags(cfg *types.Config, appLogger *logger.Logger) {
+func reconfigureLogger(configManager *config.Manager, currentLogger *logger.Logger) error {
+	// Get logger configuration from config manager
+	logConfig := configManager.GetLoggerConfig()
+
+	// Log the reconfiguration attempt
+	currentLogger.WithFields(logger.Fields{
+		"level":  logConfig.Level,
+		"format": logConfig.Format,
+		"output": logConfig.Output,
+	}).Info("Attempting to reconfigure logger from configuration file")
+
+	// Note: Logger reconfiguration requires more sophisticated implementation
+	// For now, we'll use the CLI flags which are already working
+	// The configuration file logger settings will be used in future versions
+
+	return nil
+}
+
+func overrideConfigFromFlags(cfg *types.Config, startupLogger *logger.Entry) {
 	// Override health check port if specified
 	if healthPort > 0 {
 		cfg.App.HealthCheckPort = healthPort
-		appLogger.WithFields(logger.Fields{
+		startupLogger.WithFields(logger.Fields{
 			"port": healthPort,
 		}).Debug("Overriding health check port from CLI flag")
 	}
@@ -226,7 +267,7 @@ func overrideConfigFromFlags(cfg *types.Config, appLogger *logger.Logger) {
 	// TODO: Add more flag overrides as needed
 }
 
-func handleDaemonMode(appLogger *logger.Logger) error {
+func handleDaemonMode(startupLogger *logger.Entry) error {
 	if pidFile == "" {
 		return fmt.Errorf("daemon mode requires --pid-file flag")
 	}
@@ -244,14 +285,14 @@ func handleDaemonMode(appLogger *logger.Logger) error {
 	// Ensure PID file is cleaned up on exit
 	defer func() {
 		if err := os.Remove(pidFile); err != nil {
-			appLogger.WithFields(logger.Fields{
-				"error": err.Error(),
+			startupLogger.WithFields(logger.Fields{
+				"error":    err.Error(),
 				"pid_file": pidFile,
 			}).Error("Failed to remove PID file")
 		}
 	}()
 
-	appLogger.WithFields(logger.Fields{
+	startupLogger.WithFields(logger.Fields{
 		"pid_file": pidFile,
 		"pid":      os.Getpid(),
 	}).Info("Started in daemon mode")

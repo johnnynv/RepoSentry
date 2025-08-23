@@ -3,6 +3,7 @@ package trigger
 import (
 	"context"
 	"encoding/json"
+	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -72,7 +73,7 @@ func TestTektonTrigger_NewTektonTrigger(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			trigger, err := NewTektonTrigger(tt.config)
+			trigger, err := NewTektonTrigger(tt.config, logger.GetDefaultLogger().WithField("test", "tekton"))
 
 			if tt.wantErr {
 				if err == nil {
@@ -113,17 +114,17 @@ func TestTektonTrigger_SendEvent(t *testing.T) {
 		}
 
 		// Parse request body
-		var payload TektonPayload
+		var payload CloudEventsPayload
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Errorf("Failed to decode request body: %v", err)
 		}
 
 		// Verify payload content
-		if payload.Source != "reposentry" {
-			t.Errorf("Expected source 'reposentry', got %s", payload.Source)
+		if payload.Source != "reposentry/github" {
+			t.Errorf("Expected source 'reposentry/github', got %s", payload.Source)
 		}
-		if payload.Repository.Name != "test-repo" {
-			t.Errorf("Expected repository 'test-repo', got %s", payload.Repository.Name)
+		if payload.Data.Repository.Name != "test-repo" {
+			t.Errorf("Expected repository 'test-repo', got %s", payload.Data.Repository.Name)
 		}
 
 		// Send success response
@@ -143,7 +144,7 @@ func TestTektonTrigger_SendEvent(t *testing.T) {
 		Timeout: 30 * time.Second,
 	}
 
-	trigger, err := NewTektonTrigger(config)
+	trigger, err := NewTektonTrigger(config, logger.GetDefaultLogger().WithField("test", "tekton"))
 	if err != nil {
 		t.Fatalf("Failed to create trigger: %v", err)
 	}
@@ -205,7 +206,7 @@ func TestTektonTrigger_SendEvent_Error(t *testing.T) {
 		Timeout: 30 * time.Second,
 	}
 
-	trigger, err := NewTektonTrigger(config)
+	trigger, err := NewTektonTrigger(config, logger.GetDefaultLogger().WithField("test", "tekton"))
 	if err != nil {
 		t.Fatalf("Failed to create trigger: %v", err)
 	}
@@ -271,7 +272,7 @@ func TestTektonTrigger_BatchSendEvents(t *testing.T) {
 		Timeout: 30 * time.Second,
 	}
 
-	trigger, err := NewTektonTrigger(config)
+	trigger, err := NewTektonTrigger(config, logger.GetDefaultLogger().WithField("test", "tekton"))
 	if err != nil {
 		t.Fatalf("Failed to create trigger: %v", err)
 	}
@@ -384,7 +385,7 @@ func TestTektonTrigger_HealthCheck(t *testing.T) {
 				Timeout: 30 * time.Second,
 			}
 
-			trigger, err := NewTektonTrigger(config)
+			trigger, err := NewTektonTrigger(config, logger.GetDefaultLogger().WithField("test", "tekton"))
 			if err != nil {
 				t.Fatalf("Failed to create trigger: %v", err)
 			}
@@ -418,7 +419,7 @@ func TestTektonTrigger_GetMetrics(t *testing.T) {
 		Timeout: 30 * time.Second,
 	}
 
-	trigger, err := NewTektonTrigger(config)
+	trigger, err := NewTektonTrigger(config, logger.GetDefaultLogger().WithField("test", "tekton"))
 	if err != nil {
 		t.Fatalf("Failed to create trigger: %v", err)
 	}
@@ -476,7 +477,7 @@ func TestTektonTrigger_Close(t *testing.T) {
 		Timeout: 30 * time.Second,
 	}
 
-	trigger, err := NewTektonTrigger(config)
+	trigger, err := NewTektonTrigger(config, logger.GetDefaultLogger().WithField("test", "tekton"))
 	if err != nil {
 		t.Fatalf("Failed to create trigger: %v", err)
 	}

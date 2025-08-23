@@ -4,38 +4,95 @@ A lightweight, cloud-native sentinel for monitoring GitLab and GitHub repositori
 
 ## 🚀 Quick Start
 
-### 1. Setup Environment
+### Method 1: Interactive Setup (Recommended)
 ```bash
-# Run the setup script to configure environment variables
-./examples/scripts/setup_env.sh
+# Create a dedicated directory for your monitoring setup
+mkdir repository-monitor
+cd repository-monitor
 
-# Or manually set tokens
-export GITHUB_TOKEN="your_github_token"
-export GITLAB_TOKEN="your_gitlab_token"
+# Download the RepoSentry binary
+wget https://github.com/johnnynv/RepoSentry/releases/latest/download/reposentry
+chmod +x reposentry
+
+# Run interactive configuration wizard
+./reposentry setup interactive
+
+# Start monitoring
+./start.sh
 ```
 
-### 2. Configure RepoSentry
+### Method 2: Script-based Setup (Legacy)
+```bash
+# Run the main script to get everything set up
+./examples/scripts/start.sh
+
+# Choose option 7 for Quick Start (All Steps)
+```
+
+### Method 3: Manual Setup (Advanced)
 ```bash
 # Copy an example configuration
 cp examples/configs/basic.yaml config.yaml
 
 # Edit with your repositories and Tekton webhook URL
 vim config.yaml
-```
-
-### 3. Run RepoSentry
-```bash
-# Validate configuration
-./reposentry config validate config.yaml
 
 # Start monitoring
 ./reposentry run --config config.yaml
 ```
 
-### 4. Access API Documentation
+## 🎯 Interactive Setup Details
+
+The `./reposentry setup interactive` command creates a complete, self-contained monitoring environment:
+
+**Generated Files:**
+- `config.yaml` - Application configuration (polling, logging, Tekton)
+- `repositories.yaml` - Repository definitions and monitoring settings
+- `start.sh` / `stop.sh` - Control scripts with validation
+- `.env` - Environment variables (your access tokens)
+- `README.md` - Usage instructions and configuration guide
+
+**Configuration Process:**
+1. GitHub/GitLab access tokens
+2. Repository URLs and branch patterns (supports regex)
+3. Tekton EventListener URL
+4. Polling interval settings
+
+**Advantages:**
+- ✅ Self-contained setup (all files in one directory)
+- ✅ Separate configuration files for easy management
+- ✅ Automatic validation and error checking
+- ✅ Ready-to-use control scripts
+
+### Access API Documentation
 - **Swagger UI**: http://localhost:8080/swagger/
 - **Health Check**: http://localhost:8080/health
 - **API Info**: http://localhost:8080/api
+
+## 🔧 Tekton Integration
+
+RepoSentry provides two Tekton integration templates:
+
+### Basic Version (`reposentry-basic-system.yaml`)
+- **CloudEvents 1.0 Standard Compatible**
+- **Simple Parameters**: provider, organization, repository-name, branch-name, commit-sha
+- **Enterprise Ready**: Minimal configuration, maximum compatibility
+- **Use Case**: Production environments requiring CloudEvents compliance
+
+### Advanced Version (`reposentry-advanced-system.yaml`)
+- **Rich Metadata Extraction**
+- **Enhanced Parameters**: repository-id, trigger-source, reposentry-event-id, project-name
+- **Development Friendly**: Detailed context for debugging and monitoring
+- **Use Case**: Development teams needing comprehensive pipeline information
+
+**Choose based on your needs**: Basic for production, Advanced for development.
+
+## 📚 Documentation
+
+For comprehensive documentation, see the [docs/](docs/) directory:
+- **中文文档**: [docs/zh/](docs/zh/) - Chinese documentation
+- **English Docs**: [docs/en/](docs/en/) - English documentation
+- **Documentation Index**: [docs/README.md](docs/README.md) - Complete documentation guide
 
 ## 📁 Project Structure
 
@@ -61,6 +118,9 @@ vim config.yaml
 ├── deployments/            # Deployment configurations
 │   ├── docker/             # Docker deployment
 │   ├── helm/               # Helm charts
+│   ├── tekton/             # Tekton integration templates
+│   │   ├── basic/          # Basic CloudEvents-compatible system
+│   │   └── advanced/       # Advanced system with rich metadata
 │   └── systemd/            # Systemd service
 ├── docs/                   # Documentation
 └── test/                   # Test files

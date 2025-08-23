@@ -98,67 +98,7 @@ For detailed configuration options, see [User Manual](en/USER_MANUAL.md#configur
 | **Binary** | [Quick Start](en/QUICKSTART.md#step-1-get-reposentry) | Development, small deployments |
 | **Docker** | [Quick Start](en/QUICKSTART.md#docker-deployment) | Container environments |
 | **Kubernetes** | [Quick Start](en/QUICKSTART.md#kubernetes-helm-deployment) | Production, cloud-native |
-| **Systemd** | [Quick Start](en/QUICKSTART.md#systemd-deployment) | Traditional Linux servers |
-
-## ❓ Support & Community
-
-### Getting Help
-1. **Documentation**: Check relevant documentation first
-2. **Troubleshooting**: [Troubleshooting Guide](en/TROUBLESHOOTING.md)
-3. **GitHub Issues**: [Report bugs or request features](https://github.com/johnnynv/RepoSentry/issues)
-4. **Discussions**: [Community discussions](https://github.com/johnnynv/RepoSentry/discussions)
-
-### Contributing
-- **Code**: See [Development Guide](en/DEVELOPMENT.md)
-- **Documentation**: Submit PRs for documentation improvements
-- **Issues**: Report bugs or suggest features via GitHub Issues
-
-### Community Guidelines
-- Use English for code, comments, and general documentation
-- Use Chinese only for files in `docs/zh/` directory
-- Follow [Conventional Commits](https://conventionalcommits.org/) for commit messages
-- Include tests for new features
-
-## 📋 Document Status
-
-| Document | Chinese | English | Last Updated |
-|----------|---------|---------|--------------|
-| Quick Start | ✅ | ✅ | 2024-01-15 |
-| User Manual | ✅ | ✅ | 2024-01-15 |
-| Architecture | ✅ | ✅ | 2024-01-15 |
-| Troubleshooting | ✅ | ✅ | 2024-01-15 |
-| Development | ✅ | ✅ | 2024-01-15 |
-| API Examples | ✅ | ✅ | 2024-01-15 |
-
-## 🔗 External Resources
-
-- **GitHub Repository**: [https://github.com/johnnynv/RepoSentry](https://github.com/johnnynv/RepoSentry)
-- **Docker Hub**: [https://hub.docker.com/r/johnnynv/reposentry](https://hub.docker.com/r/johnnynv/reposentry)
-- **Helm Chart**: Available in `deployments/helm/reposentry/`
-- **Example Configurations**: Available in `examples/configs/`
 
 ---
 
-## 📝 Documentation Conventions
-
-### File Naming
-- Use `UPPER_CASE.md` for main documentation files
-- Use `lower_case.md` for supplementary documentation
-- Chinese files in `docs/zh/`, English files in `docs/en/`
-
-### Content Guidelines
-- Start with overview and table of contents
-- Use clear headings and subheadings
-- Include practical examples and code snippets
-- Cross-reference related documentation
-- Keep examples up-to-date with current version
-
-### Language Standards
-- **English**: Use American English spelling
-- **Chinese**: Use Simplified Chinese characters
-- **Code**: All code, comments, and variable names in English
-- **Configuration**: YAML examples with English keys and comments
-
----
-
-For questions about documentation, please open an issue or submit a pull request!
+**Note**: For project overview, quick start, and project structure, see the main [README.md](../README.md) in the project root.

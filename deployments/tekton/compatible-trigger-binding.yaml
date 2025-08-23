@@ -1,0 +1,45 @@
+# RepoSentry Compatible TriggerBinding
+# 支持RepoSentry实际发送的payload格式
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: reposentry-compatible-binding
+  namespace: default
+spec:
+  params:
+    # 直接从顶级metadata字段读取
+    - name: provider
+      value: $(body.metadata.provider)
+    - name: organization
+      value: $(body.metadata.organization)
+    - name: repository-name
+      value: $(body.metadata.repository_name)
+    - name: branch
+      value: $(body.metadata.branch)
+    - name: commit-sha
+      value: $(body.metadata.commit_sha)
+    - name: short-sha
+      value: $(body.metadata.short_sha)
+    - name: event-type
+      value: $(body.metadata.event_type)
+    - name: repository-id
+      value: $(body.metadata.repository_id)
+    - name: trigger-source
+      value: $(body.metadata.trigger_source)
+    - name: trigger-id
+      value: $(body.metadata.trigger_id)
+---
+# 更新EventListener使用兼容的TriggerBinding
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: reposentry-webhook-handler
+  namespace: default
+spec:
+  serviceAccountName: tekton-triggers-serviceaccount
+  triggers:
+    - name: reposentry-pipeline-trigger
+      bindings:
+        - ref: reposentry-compatible-binding
+      template:
+        ref: reposentry-advanced-template

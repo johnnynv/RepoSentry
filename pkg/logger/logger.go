@@ -11,8 +11,6 @@ type Logger struct {
 	*logrus.Logger
 }
 
-
-
 // NewLogger creates a new structured logger
 func NewLogger(config Config) (*Logger, error) {
 	logger := logrus.New()
@@ -57,8 +55,6 @@ func NewLogger(config Config) (*Logger, error) {
 
 	return &Logger{Logger: logger}, nil
 }
-
-
 
 // GetDefaultLogger returns a default logger for development
 func GetDefaultLogger() *Logger {

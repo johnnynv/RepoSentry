@@ -28,7 +28,7 @@ func (e ValidationErrors) Error() string {
 	if len(e) == 0 {
 		return ""
 	}
-	
+
 	var messages []string
 	for _, err := range e {
 		messages = append(messages, err.Error())
@@ -63,7 +63,7 @@ func (v *Validator) Validate(config *types.Config) error {
 	if len(v.errors) > 0 {
 		return v.errors
 	}
-	
+
 	return nil
 }
 
@@ -198,10 +198,10 @@ func (v *Validator) validateRepositories(repositories []types.Repository) {
 	}
 
 	names := make(map[string]bool)
-	
+
 	for i, repo := range repositories {
 		prefix := fmt.Sprintf("repositories[%d]", i)
-		
+
 		// Validate unique names
 		if repo.Name == "" {
 			v.addError(prefix+".name", repo.Name, "repository name is required")
@@ -242,12 +242,15 @@ func (v *Validator) validateRepositories(repositories []types.Repository) {
 
 		// Validate polling interval if set
 		if repo.PollingInterval > 0 && repo.PollingInterval < time.Minute {
-			v.addError(prefix+".polling_interval", repo.PollingInterval.String(), "polling interval cannot be less than 1 minute")
+			v.addError(prefix+".polling_interval", repo.PollingInterval.String(),
+				"polling interval cannot be less than 1 minute (to protect against API rate limits and avoid service abuse)")
 		}
 
 		// Validate API base URL if set
 		if repo.APIBaseURL != "" {
-			if _, err := url.Parse(repo.APIBaseURL); err != nil {
+			// Trim whitespace for robustness
+			cleanAPIURL := strings.TrimSpace(repo.APIBaseURL)
+			if _, err := url.Parse(cleanAPIURL); err != nil {
 				v.addError(prefix+".api_base_url", repo.APIBaseURL, "invalid API base URL format")
 			}
 		}
@@ -256,6 +259,9 @@ func (v *Validator) validateRepositories(repositories []types.Repository) {
 
 // validateURL validates repository URL format and security requirements
 func (v *Validator) validateURL(repoURL string) error {
+	// Trim whitespace for robustness
+	repoURL = strings.TrimSpace(repoURL)
+
 	parsedURL, err := url.Parse(repoURL)
 	if err != nil {
 		return fmt.Errorf("invalid URL format: %w", err)
