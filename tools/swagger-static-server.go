@@ -14,7 +14,7 @@ func main() {
 	// 创建多路复用器
 	mux := http.NewServeMux()
 
-		// 添加根路径重定向
+	// 添加根路径重定向
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			// 重定向到swagger UI
@@ -77,7 +77,9 @@ func main() {
                 plugins: [
                     SwaggerUIBundle.plugins.DownloadUrl
                 ],
-                layout: "Standalone"
+                validatorUrl: null,
+                tryItOutEnabled: true,
+                supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch']
             });
         };
     </script>
