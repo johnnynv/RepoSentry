@@ -1,0 +1,76 @@
+# RepoSentry 集群级别 RBAC 配置
+# 允许 RepoSentry 在动态创建的命名空间中管理 Tekton 资源
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: reposentry-pipeline-manager
+  labels:
+    app.kubernetes.io/name: reposentry
+    app.kubernetes.io/component: rbac
+rules:
+# 命名空间管理
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+
+# Tekton 资源管理
+- apiGroups: ["tekton.dev"]
+  resources: ["tasks", "pipelines", "pipelineruns", "taskruns", "customruns"]
+  verbs: ["get", "list", "create", "update", "patch", "delete", "watch"]
+
+# 基础 Kubernetes 资源
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+  verbs: ["get", "list", "create", "update", "patch", "delete", "watch"]
+
+# 扩展资源
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "daemonsets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+
+# RBAC 管理（为动态命名空间创建权限）
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: reposentry-pipeline-binding
+  labels:
+    app.kubernetes.io/name: reposentry
+    app.kubernetes.io/component: rbac
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: reposentry-pipeline-manager
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# 为 Tekton Triggers 提供必要权限
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: reposentry-triggers-binding
+  labels:
+    app.kubernetes.io/name: reposentry
+    app.kubernetes.io/component: rbac
+subjects:
+- kind: ServiceAccount
+  name: tekton-triggers-serviceaccount
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: reposentry-pipeline-manager
+  apiGroup: rbac.authorization.k8s.io
+
+

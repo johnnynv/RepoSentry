@@ -1,0 +1,34 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: reposentry-demo
+  name: user-pipeline-executor
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+  verbs: ["get", "list", "create", "update", "patch", "delete", "watch"]
+- apiGroups: ["tekton.dev"]
+  resources: ["tasks", "taskruns", "pipelines", "pipelineruns", "customruns"]
+  verbs: ["get", "list", "create", "update", "patch", "delete", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "daemonsets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: user-pipeline-binding
+  namespace: reposentry-demo
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: reposentry-demo
+roleRef:
+  kind: Role
+  name: user-pipeline-executor
+  apiGroup: rbac.authorization.k8s.io
+
+

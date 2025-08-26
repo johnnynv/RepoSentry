@@ -1,0 +1,48 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: debug-scan-test-
+spec:
+  pipelineSpec:
+    workspaces:
+      - name: source-code
+    tasks:
+      - name: git-clone-debug
+        taskSpec:
+          workspaces:
+            - name: output
+          steps:
+            - name: clone
+              image: alpine/git:latest
+              workingDir: $(workspaces.output.path)
+              script: |
+                #!/bin/sh
+                echo "🔄 Cloning repository for debug..."
+                rm -rf ./*
+                rm -rf ./.[!.]*
+                git clone https://github.com/johnnynv-org/tekton-workflow-gh-demo .
+                git checkout main
+                echo "✅ Repository cloned successfully"
+                echo "📁 Current directory contents:"
+                ls -la
+                echo ""
+                echo "📂 .tekton directory contents:"
+                if [ -d ".tekton" ]; then
+                  find .tekton -type f -name "*.yaml" -o -name "*.yml"
+                else
+                  echo "❌ .tekton directory not found"
+                fi
+        workspaces:
+          - name: output
+            workspace: source-code
+  workspaces:
+    - name: source-code
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+
+

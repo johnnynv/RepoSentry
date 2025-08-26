@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: reposentry-demo-sa
+  namespace: reposentry-demo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: reposentry-demo
+  name: tekton-resources-manager
+rules:
+- apiGroups: ["tekton.dev"]
+  resources: ["tasks", "pipelines", "pipelineruns", "taskruns"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets", "persistentvolumeclaims"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reposentry-demo-binding
+  namespace: reposentry-demo
+subjects:
+- kind: ServiceAccount
+  name: reposentry-demo-sa
+  namespace: reposentry-demo
+roleRef:
+  kind: Role
+  name: tekton-resources-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+# Also need to give permission to default SA in default namespace to manage reposentry-demo
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: reposentry-demo
+  name: cross-namespace-tekton-manager
+rules:
+- apiGroups: ["tekton.dev"]
+  resources: ["tasks", "pipelines", "pipelineruns", "taskruns"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets", "persistentvolumeclaims"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: default-sa-cross-namespace
+  namespace: reposentry-demo
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: default
+roleRef:
+  kind: Role
+  name: cross-namespace-tekton-manager
+  apiGroup: rbac.authorization.k8s.io
+
+

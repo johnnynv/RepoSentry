@@ -1,0 +1,396 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: reposentry-demo-pipeline
+  namespace: default
+  labels:
+    app.kubernetes.io/name: reposentry
+    app.kubernetes.io/component: demo-pipeline
+    app.kubernetes.io/version: "2.0"
+  annotations:
+    description: "Demo pipeline to clone repo and execute Tekton resources"
+spec:
+  params:
+    - name: repository-url
+      type: string
+      description: "Git repository URL to clone"
+      default: "https://github.com/johnnynv-org/tekton-workflow-gh-demo"
+    - name: branch-name
+      type: string
+      description: "Git branch to checkout"
+      default: "main"
+    - name: tekton-path
+      type: string
+      description: "Path to Tekton resources in the repository"
+      default: ".tekton/pipelines"
+    - name: target-namespace
+      type: string
+      description: "Namespace to apply Tekton resources"
+      default: "default"
+    - name: github-token
+      type: string
+      description: "GitHub token for private repository access (optional)"
+      default: ""
+  
+  workspaces:
+    - name: source-code
+      description: "Workspace for cloned source code"
+    - name: tekton-resources
+      description: "Workspace for Tekton resource processing"
+  
+  tasks:
+    - name: git-clone
+      taskSpec:
+        params:
+          - name: url
+            type: string
+          - name: revision
+            type: string
+        workspaces:
+          - name: output
+            description: "The git repo will be cloned onto the volume backing this workspace"
+        steps:
+          - name: clone
+            image: alpine/git:latest
+            workingDir: $(workspaces.output.path)
+            script: |
+              #!/bin/sh
+              echo "🔄 Cloning repository: $(params.url)"
+              echo "📍 Revision: $(params.revision)"
+              
+              # Clean existing content
+              rm -rf ./*
+              rm -rf ./.[!.]*
+              
+              # Clone the repository
+              git clone $(params.url) .
+              git checkout $(params.revision)
+              
+              echo "✅ Repository cloned successfully"
+              echo "📁 Current directory contents:"
+              ls -la
+      params:
+        - name: url
+          value: $(params.repository-url)
+        - name: revision
+          value: $(params.branch-name)
+      workspaces:
+        - name: output
+          workspace: source-code
+    
+    - name: list-tekton-resources
+      runAfter: ["git-clone"]
+      taskSpec:
+        workspaces:
+          - name: source
+            description: "Source code workspace"
+        params:
+          - name: tekton-path
+            description: "Path to scan for Tekton resources"
+        steps:
+          - name: scan-resources
+            image: alpine:latest
+            workingDir: $(workspaces.source.path)
+            script: |
+              #!/bin/sh
+              echo "🔍 Scanning for Tekton resources in $(params.tekton-path)..."
+              
+              if [ ! -d "$(params.tekton-path)" ]; then
+                echo "❌ Directory $(params.tekton-path) does not exist"
+                exit 1
+              fi
+              
+              echo "📁 Found directory: $(params.tekton-path)"
+              echo "📋 Listing all YAML files:"
+              find $(params.tekton-path) -name "*.yaml" -o -name "*.yml" | while read file; do
+                echo "  📄 $file"
+                echo "    Content preview:"
+                head -10 "$file" | sed 's/^/      /'
+                echo "    ---"
+              done
+              
+              echo "✅ Resource scanning completed"
+      params:
+        - name: tekton-path
+          value: $(params.tekton-path)
+      workspaces:
+        - name: source
+          workspace: source-code
+    
+    - name: validate-tekton-resources
+      runAfter: ["list-tekton-resources"]
+      taskSpec:
+        workspaces:
+          - name: source
+            description: "Source code workspace"
+        params:
+          - name: tekton-path
+            description: "Path to validate Tekton resources"
+        steps:
+          - name: validate-yaml
+            image: python:3.9-alpine
+            workingDir: $(workspaces.source.path)
+            script: |
+              #!/bin/sh
+              echo "🔍 Validating YAML syntax in $(params.tekton-path)..."
+              
+              pip install pyyaml > /dev/null 2>&1
+              
+              find $(params.tekton-path) -name "*.yaml" -o -name "*.yml" | while read file; do
+                echo "📄 Validating $file..."
+                python3 -c "
+              import yaml
+              import sys
+              try:
+                  with open('$file', 'r') as f:
+                      doc = yaml.safe_load(f)
+                      if doc is None:
+                          print('  ⚠️  Empty YAML file')
+                      else:
+                          print('  ✅ Valid YAML syntax')
+                          if 'apiVersion' in doc and 'tekton' in doc.get('apiVersion', ''):
+                              print(f'  🎯 Tekton resource detected: {doc.get(\"kind\", \"Unknown\")}')
+                          else:
+                              print('  ℹ️  Not a Tekton resource')
+              except Exception as e:
+                  print(f'  ❌ Invalid YAML: {e}')
+                  sys.exit(1)
+              "
+              done
+              
+              echo "✅ YAML validation completed"
+      params:
+        - name: tekton-path
+          value: $(params.tekton-path)
+      workspaces:
+        - name: source
+          workspace: source-code
+    
+    - name: apply-tekton-resources
+      runAfter: ["validate-tekton-resources"]
+      taskSpec:
+        workspaces:
+          - name: source
+            description: "Source code workspace"
+        params:
+          - name: tekton-path
+            description: "Path to apply Tekton resources from"
+          - name: target-namespace
+            description: "Target namespace for resources"
+        steps:
+          - name: apply-resources
+            image: bitnami/kubectl:latest
+            workingDir: $(workspaces.source.path)
+            script: |
+              #!/bin/bash
+              echo "🚀 Applying Tekton resources from $(params.tekton-path) to namespace $(params.target-namespace)..."
+              
+              # Ensure target namespace exists
+              kubectl create namespace $(params.target-namespace) --dry-run=client -o yaml | kubectl apply -f -
+              
+              # Find and categorize Tekton resources
+              TASK_FILES=$(find $(params.tekton-path) -name "*.yaml" -o -name "*.yml" | xargs grep -l "kind: Task" 2>/dev/null || true)
+              PIPELINE_FILES=$(find $(params.tekton-path) -name "*.yaml" -o -name "*.yml" | xargs grep -l "kind: Pipeline" 2>/dev/null || true)
+              OTHER_FILES=$(find $(params.tekton-path) -name "*.yaml" -o -name "*.yml" | xargs grep -L "kind: \(Task\|Pipeline\)" 2>/dev/null || true)
+              
+              # Apply Tasks first
+              if [ -n "$TASK_FILES" ]; then
+                echo "📋 Applying Tasks..."
+                for file in $TASK_FILES; do
+                  echo "  📄 Applying Task from: $file"
+                  kubectl apply -f "$file" -n $(params.target-namespace)
+                done
+              fi
+              
+              # Apply Pipelines second
+              if [ -n "$PIPELINE_FILES" ]; then
+                echo "🔄 Applying Pipelines..."
+                for file in $PIPELINE_FILES; do
+                  echo "  📄 Applying Pipeline from: $file"
+                  kubectl apply -f "$file" -n $(params.target-namespace)
+                done
+              fi
+              
+              # Apply other Tekton resources
+              if [ -n "$OTHER_FILES" ]; then
+                echo "🔧 Applying other resources..."
+                for file in $OTHER_FILES; do
+                  echo "  📄 Applying resource from: $file"
+                  kubectl apply -f "$file" -n $(params.target-namespace) || echo "  ⚠️  Failed to apply $file (might not be a valid Tekton resource)"
+                done
+              fi
+              
+              echo "✅ Resource application completed"
+              
+              # List applied resources
+              echo "📊 Applied Tekton resources in namespace $(params.target-namespace):"
+              kubectl get tasks,pipelines,pipelineruns -n $(params.target-namespace) --show-labels
+      params:
+        - name: tekton-path
+          value: $(params.tekton-path)
+        - name: target-namespace
+          value: $(params.target-namespace)
+      workspaces:
+        - name: source
+          workspace: source-code
+    
+    - name: demonstrate-resources
+      runAfter: ["apply-tekton-resources"]
+      taskSpec:
+        workspaces:
+          - name: source
+            description: "Source code workspace"
+        params:
+          - name: target-namespace
+            description: "Namespace to demonstrate resources from"
+          - name: repository-url
+            description: "Source repository URL for reference"
+        steps:
+          - name: show-resources
+            image: bitnami/kubectl:latest
+            script: |
+              #!/bin/bash
+              echo "🎭 Demonstrating applied Tekton resources in namespace $(params.target-namespace)..."
+              echo ""
+              echo "📍 Source repository: $(params.repository-url)"
+              echo ""
+              
+              # Show Tasks
+              echo "📋 Applied Tasks:"
+              kubectl get tasks -n $(params.target-namespace) 2>/dev/null || echo "  No tasks found"
+              echo ""
+              
+              # Show Pipelines  
+              echo "🔄 Applied Pipelines:"
+              kubectl get pipelines -n $(params.target-namespace) 2>/dev/null || echo "  No pipelines found"
+              echo ""
+              
+              # Show recent PipelineRuns
+              echo "🏃 Recent PipelineRuns:"
+              kubectl get pipelineruns -n $(params.target-namespace) 2>/dev/null || echo "  No pipeline runs found"
+              echo ""
+              
+              # Show a detailed view of one pipeline if exists
+              FIRST_PIPELINE=$(kubectl get pipelines -n $(params.target-namespace) -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+              if [ -n "$FIRST_PIPELINE" ]; then
+                echo "🔍 Detailed view of Pipeline '$FIRST_PIPELINE':"
+                kubectl describe pipeline $FIRST_PIPELINE -n $(params.target-namespace)
+              fi
+              
+              echo ""
+              echo "✅ Resource demonstration completed"
+      params:
+        - name: target-namespace
+          value: $(params.target-namespace)
+        - name: repository-url
+          value: $(params.repository-url)
+      workspaces:
+        - name: source
+          workspace: source-code
+
+    - name: execute-user-pipeline
+      runAfter: ["demonstrate-resources"]
+      taskSpec:
+        workspaces:
+          - name: source
+            description: "Source code workspace"
+        params:
+          - name: target-namespace
+            description: "Target namespace for user pipeline execution"
+          - name: repository-url
+            description: "Repository URL to pass to user pipeline"
+          - name: branch-name
+            description: "Branch name to pass to user pipeline"
+        steps:
+          - name: trigger-user-pipeline
+            image: bitnami/kubectl:latest
+            workingDir: $(workspaces.source.path)
+            script: |
+              #!/bin/bash
+              echo "🚀 ===== EXECUTING USER-DEFINED PIPELINE ===== 🚀"
+              echo ""
+              
+              # Check if user pipeline exists
+              if kubectl get pipeline pytest-pipeline -n $(params.target-namespace) &>/dev/null; then
+                echo "✅ Found user pipeline: pytest-pipeline"
+                echo ""
+                
+                # Create a PipelineRun for the user's pipeline with current timestamp
+                TIMESTAMP=$(date +%s)
+                PIPELINE_RUN_NAME="user-pytest-run-${TIMESTAMP}"
+                
+                echo "🎯 Creating PipelineRun: $PIPELINE_RUN_NAME"
+                
+                cat <<EOF | kubectl apply -f -
+              apiVersion: tekton.dev/v1beta1
+              kind: PipelineRun
+              metadata:
+                name: ${PIPELINE_RUN_NAME}
+                namespace: $(params.target-namespace)
+                labels:
+                  triggered-by: reposentry-demo
+                  original-repo: "$(echo "$(params.repository-url)" | sed 's|https://github.com/||' | sed 's|/|-|g')"
+              spec:
+                pipelineRef:
+                  name: pytest-pipeline
+                params:
+                  - name: git-url
+                    value: "$(params.repository-url)"
+                  - name: git-revision
+                    value: "$(params.branch-name)"
+                  - name: git-short-sha
+                    value: "${TIMESTAMP}"
+                workspaces:
+                  - name: shared-data
+                    volumeClaimTemplate:
+                      spec:
+                        accessModes:
+                          - ReadWriteOnce
+                        resources:
+                          requests:
+                            storage: 1Gi
+              EOF
+                
+                if [ $? -eq 0 ]; then
+                  echo "🎉 Successfully triggered user pipeline: $PIPELINE_RUN_NAME"
+                  echo ""
+                  echo "📊 You can monitor the user's pipeline execution at:"
+                  echo "   🌐 Tekton Dashboard: http://tekton.10.78.14.61.nip.io/#/namespaces/$(params.target-namespace)/pipelineruns/$PIPELINE_RUN_NAME"
+                  echo "   🔍 CLI: kubectl get pipelinerun $PIPELINE_RUN_NAME -n $(params.target-namespace) -w"
+                  echo ""
+                  echo "⚡ The user's pytest pipeline will execute these steps:"
+                  echo "   1. 🔄 git-clone: Clone the source repository"
+                  echo "   2. 🧪 run-pytest-tests: Execute pytest test suite"
+                  echo "   3. 📊 show-test-reports-link: Display test results and links"
+                  echo ""
+                  echo "🎯 This demonstrates how RepoSentry can automatically trigger"
+                  echo "   user-defined pipelines from their .tekton/ directories!"
+                  
+                  # Wait a moment and show initial status
+                  sleep 5
+                  echo ""
+                  echo "📈 Initial status check:"
+                  kubectl get pipelinerun $PIPELINE_RUN_NAME -n $(params.target-namespace) || echo "PipelineRun not found yet"
+                else
+                  echo "❌ Failed to create user PipelineRun"
+                fi
+              else
+                echo "⚠️  User pipeline 'pytest-pipeline' not found in namespace $(params.target-namespace)"
+                echo "This might be because the apply-tekton-resources step failed."
+                echo ""
+                echo "🔍 Available pipelines in $(params.target-namespace):"
+                kubectl get pipelines -n $(params.target-namespace) || echo "No pipelines found"
+              fi
+              echo ""
+              echo "📋 Summary of all resources in $(params.target-namespace):"
+              kubectl get tasks,pipelines,pipelineruns -n $(params.target-namespace) 2>/dev/null || echo "No resources found yet"
+      params:
+        - name: target-namespace
+          value: $(params.target-namespace)
+        - name: repository-url
+          value: $(params.repository-url)
+        - name: branch-name
+          value: $(params.branch-name)
+      workspaces:
+        - name: source
+          workspace: source-code

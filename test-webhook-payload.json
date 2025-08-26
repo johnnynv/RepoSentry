@@ -1,0 +1,27 @@
+{
+  "specversion": "1.0",
+  "type": "dev.reposentry.repository.updated",
+  "source": "reposentry/github-webhook",
+  "id": "test-webhook-1756109400",
+  "time": "2025-08-25T08:30:00Z",
+  "datacontenttype": "application/json",
+  "data": {
+    "repository": {
+      "provider": "github",
+      "organization": "johnnynv-org",
+      "name": "tekton-workflow-gh-demo",
+      "url": "https://github.com/johnnynv-org/tekton-workflow-gh-demo"
+    },
+    "branch": {
+      "name": "main"
+    },
+    "commit": {
+      "sha": "b12cdf8a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e",
+      "message": "Updated Tekton pipelines for integration test"
+    },
+    "event": {
+      "type": "branch_updated",
+      "trigger_id": "webhook-test-1756109400"
+    }
+  }
+}

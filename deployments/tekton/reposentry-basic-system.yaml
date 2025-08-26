@@ -3,111 +3,8 @@
 # 版本：v2.0 (CloudEvents 1.0 标准)
 
 ---
-# RepoSentry 标准 Pipeline - CloudEvents 兼容
-apiVersion: tekton.dev/v1beta1
-kind: Pipeline
-metadata:
-  name: reposentry-ci-pipeline
-  namespace: default
-  labels:
-    app.kubernetes.io/name: reposentry
-    app.kubernetes.io/component: pipeline
-    app.kubernetes.io/version: "2.0"
-    reposentry.dev/format: cloudevents
-  annotations:
-    description: "RepoSentry CloudEvents standard pipeline"
-    reposentry.dev/payload-format: "cloudevents-1.0"
-spec:
-  params:
-    # === 核心仓库参数 ===
-    - name: provider
-      type: string
-      description: "Git provider (github/gitlab)"
-    - name: organization
-      type: string
-      description: "Repository organization/owner"
-    - name: repository-name
-      type: string
-      description: "Repository name"
-    - name: repository-url
-      type: string
-      description: "Repository URL"
-    - name: branch-name
-      type: string
-      description: "Git branch name"
-    - name: commit-sha
-      type: string
-      description: "Git commit SHA"
-    - name: commit-message
-      type: string
-      description: "Commit message"
-    - name: event-type
-      type: string
-      description: "Event type (branch_updated/branch_created/branch_deleted)"
-    - name: trigger-id
-      type: string
-      description: "Unique trigger identifier"
-    
-  tasks:
-    - name: display-cloudevents-info
-      taskSpec:
-        params:
-          - name: provider
-          - name: organization
-          - name: repository-name
-          - name: repository-url
-          - name: branch-name
-          - name: commit-sha
-          - name: commit-message
-          - name: event-type
-          - name: trigger-id
-        steps:
-          - name: display-info
-            image: alpine:latest
-            script: |
-              #!/bin/sh
-              echo "=== 🚀 RepoSentry CloudEvents CI Pipeline v2.0 ==="
-              echo ""
-              echo "📋 CloudEvents Standard Format Detected ✅"
-              echo ""
-              echo "📍 Repository Information:"
-              echo "  🔗 Provider: $(params.provider)"
-              echo "  🏢 Organization: $(params.organization)"
-              echo "  📦 Repository: $(params.repository-name)"
-              echo "  🌐 URL: $(params.repository-url)"
-              echo ""
-              echo "🌿 Branch & Commit Information:"
-              echo "  🌱 Branch: $(params.branch-name)"
-              echo "  📝 Commit SHA: $(params.commit-sha)"
-              echo "  💬 Message: $(params.commit-message)"
-              echo ""
-              echo "⚡ Event Information:"
-              echo "  🎯 Type: $(params.event-type)"
-              echo "  🆔 Trigger ID: $(params.trigger-id)"
-              echo ""
-              echo "✅ All CloudEvents parameters successfully extracted!"
-              echo "🎯 Pipeline ready for custom CI/CD tasks..."
-              echo ""
-              echo "📚 Docs: docs/zh/tekton-integration-guide.md"
-      params:
-        - name: provider
-          value: $(params.provider)
-        - name: organization
-          value: $(params.organization)
-        - name: repository-name
-          value: $(params.repository-name)
-        - name: repository-url
-          value: $(params.repository-url)
-        - name: branch-name
-          value: $(params.branch-name)
-        - name: commit-sha
-          value: $(params.commit-sha)
-        - name: commit-message
-          value: $(params.commit-message)
-        - name: event-type
-          value: $(params.event-type)
-        - name: trigger-id
-          value: $(params.trigger-id)
+# NOTE: The main pipeline is now defined in reposentry-demo-pipeline.yaml
+# This file only contains the Tekton Triggers configuration
 
 ---
 # RepoSentry 标准 TriggerBinding - CloudEvents 路径
@@ -204,7 +101,7 @@ spec:
           reposentry.dev/version: "2.0"
           
           # === Tekton 标准标签 ===
-          tekton.dev/pipeline: reposentry-ci-pipeline
+          tekton.dev/pipeline: reposentry-demo-pipeline
           
           # === 应用标签 ===
           app.kubernetes.io/name: reposentry
@@ -221,7 +118,7 @@ spec:
           
       spec:
         pipelineRef:
-          name: reposentry-ci-pipeline
+          name: reposentry-demo-pipeline
         params:
           - name: provider
             value: $(tt.params.provider)
@@ -241,6 +138,29 @@ spec:
             value: $(tt.params.event-type)
           - name: trigger-id
             value: $(tt.params.trigger-id)
+          - name: tekton-path
+            value: ".tekton"
+          - name: target-namespace-prefix
+            value: "reposentry"
+          - name: github-token
+            value: ""
+        workspaces:
+          - name: source-code
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: tekton-resources
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 500Mi
 
 ---
 # RepoSentry 标准 EventListener - CloudEvents 处理

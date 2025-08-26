@@ -1,0 +1,586 @@
+# RepoSentry Demo Pipeline - CloudEvents 兼容的完整 CI/CD 工作流
+# 版本：v2.0 (Bootstrap Pipeline 方案)
+# 功能：自动检测、验证、应用并执行用户定义的 Tekton 资源
+
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: reposentry-demo-pipeline
+  namespace: default
+  labels:
+    app.kubernetes.io/name: reposentry
+    app.kubernetes.io/component: pipeline
+    app.kubernetes.io/version: "2.0"
+    reposentry.dev/format: cloudevents
+    reposentry.dev/type: bootstrap
+  annotations:
+    description: "RepoSentry Bootstrap Pipeline - 自动执行用户定义的 Tekton 资源"
+    reposentry.dev/payload-format: "cloudevents-1.0"
+    reposentry.dev/docs: "docs/zh/tekton-integration-master-plan.md"
+spec:
+  params:
+    # === CloudEvents 标准参数 (来自 RepoSentry) ===
+    - name: provider
+      type: string
+      description: "Git provider (github/gitlab)"
+    - name: organization
+      type: string
+      description: "Repository organization/owner"
+    - name: repository-name
+      type: string
+      description: "Repository name"
+    - name: repository-url
+      type: string
+      description: "Repository URL"
+    - name: branch-name
+      type: string
+      description: "Git branch name"
+    - name: commit-sha
+      type: string
+      description: "Git commit SHA"
+    - name: commit-message
+      type: string
+      description: "Commit message"
+    - name: event-type
+      type: string
+      description: "Event type (branch_updated/branch_created/branch_deleted)"
+    - name: trigger-id
+      type: string
+      description: "Unique trigger identifier"
+    
+    # === Bootstrap Pipeline 特定参数 ===
+    - name: tekton-path
+      type: string
+      description: "Path to Tekton resources in the repository"
+      default: ".tekton"
+    - name: target-namespace-prefix
+      type: string
+      description: "Prefix for target namespace (will append repo name)"
+      default: "reposentry"
+    - name: github-token
+      type: string
+      description: "GitHub token for private repository access (optional)"
+      default: ""
+  
+  workspaces:
+    - name: source-code
+      description: "Workspace for cloned source code"
+    - name: tekton-resources
+      description: "Workspace for Tekton resource processing"
+  
+  tasks:
+    - name: display-cloudevents-info
+      taskSpec:
+        params:
+          - name: provider
+          - name: organization
+          - name: repository-name
+          - name: repository-url
+          - name: branch-name
+          - name: commit-sha
+          - name: commit-message
+          - name: event-type
+          - name: trigger-id
+        steps:
+          - name: display-info
+            image: alpine:latest
+            script: |
+              #!/bin/sh
+              echo "🚀 === RepoSentry Bootstrap Pipeline v2.0 === 🚀"
+              echo ""
+              echo "📋 CloudEvents Standard Format Detected ✅"
+              echo ""
+              echo "📍 Repository Information:"
+              echo "  🔗 Provider: $(params.provider)"
+              echo "  🏢 Organization: $(params.organization)"
+              echo "  📦 Repository: $(params.repository-name)"
+              echo "  🌐 URL: $(params.repository-url)"
+              echo ""
+              echo "🌿 Branch & Commit Information:"
+              echo "  🌱 Branch: $(params.branch-name)"
+              echo "  📝 Commit SHA: $(params.commit-sha)"
+              echo "  💬 Message: $(params.commit-message)"
+              echo ""
+              echo "⚡ Event Information:"
+              echo "  🎯 Type: $(params.event-type)"
+              echo "  🆔 Trigger ID: $(params.trigger-id)"
+              echo ""
+              echo "🎯 Bootstrap Pipeline will now:"
+              echo "  1. 📥 Clone user repository"
+              echo "  2. 🔍 Scan for .tekton/ resources"
+              echo "  3. ✅ Validate Tekton YAML syntax"
+              echo "  4. 🚀 Apply resources to target namespace"
+              echo "  5. ⚡ Execute user-defined pipelines"
+              echo ""
+              echo "✅ Starting automated workflow..."
+      params:
+        - name: provider
+          value: $(params.provider)
+        - name: organization
+          value: $(params.organization)
+        - name: repository-name
+          value: $(params.repository-name)
+        - name: repository-url
+          value: $(params.repository-url)
+        - name: branch-name
+          value: $(params.branch-name)
+        - name: commit-sha
+          value: $(params.commit-sha)
+        - name: commit-message
+          value: $(params.commit-message)
+        - name: event-type
+          value: $(params.event-type)
+        - name: trigger-id
+          value: $(params.trigger-id)
+
+    - name: git-clone
+      runAfter: ["display-cloudevents-info"]
+      taskSpec:
+        params:
+          - name: url
+            type: string
+          - name: revision
+            type: string
+        workspaces:
+          - name: output
+            description: "The git repo will be cloned onto the volume backing this workspace"
+        steps:
+          - name: clone
+            image: alpine/git:latest
+            workingDir: $(workspaces.output.path)
+            script: |
+              #!/bin/sh
+              echo "🔄 Cloning repository: $(params.url)"
+              echo "📍 Revision: $(params.revision)"
+              
+              # Clean existing content
+              rm -rf ./*
+              rm -rf ./.[!.]*
+              
+              # Clone the repository
+              git clone $(params.url) .
+              git checkout $(params.revision)
+              
+              echo "✅ Repository cloned successfully"
+              echo "📁 Current directory contents:"
+              ls -la
+      params:
+        - name: url
+          value: $(params.repository-url)
+        - name: revision
+          value: $(params.branch-name)
+      workspaces:
+        - name: output
+          workspace: source-code
+    
+    - name: scan-tekton-resources
+      runAfter: ["git-clone"]
+      taskSpec:
+        params:
+          - name: tekton-path
+          - name: repository-name
+        workspaces:
+          - name: source
+            description: "Source code workspace"
+        steps:
+          - name: scan-paths
+            image: alpine:latest
+            workingDir: $(workspaces.source.path)
+            script: |
+              #!/bin/sh
+              echo "🔍 Scanning for Tekton resources in repository: $(params.repository-name)"
+              echo "📂 Base scan path: $(params.tekton-path)"
+              echo ""
+              
+              # Check for common Tekton paths - prioritize exact matches
+              PATHS_TO_CHECK=".tekton/pipelines .tekton/pipeline .tekton/tasks .tekton $(params.tekton-path)/pipelines $(params.tekton-path)/pipeline $(params.tekton-path)/tasks $(params.tekton-path)"
+              
+              FOUND_PATHS=""
+              TOTAL_FILES=0
+              
+              for path in $PATHS_TO_CHECK; do
+                if [ -d "$path" ]; then
+                  echo "✅ Found Tekton directory: $path"
+                  FILES=$(find "$path" -name "*.yaml" -o -name "*.yml" | wc -l)
+                  if [ "$FILES" -gt 0 ]; then
+                    echo "  📄 Contains $FILES YAML files"
+                    FOUND_PATHS="$FOUND_PATHS $path"
+                    TOTAL_FILES=$((TOTAL_FILES + FILES))
+                    
+                    echo "  📋 Files found:"
+                    find "$path" -name "*.yaml" -o -name "*.yml" | head -10 | while read file; do
+                      echo "    • $file"
+                    done
+                  fi
+                  echo ""
+                fi
+              done
+              
+              if [ "$TOTAL_FILES" -eq 0 ]; then
+                echo "⚠️  No Tekton YAML files found in any standard locations"
+                echo "📍 Searched paths: $PATHS_TO_CHECK"
+                echo ""
+                echo "🔍 Debug: Let's check what's actually in the repository:"
+                echo "📁 Root directory contents:"
+                ls -la
+                echo ""
+                echo "📂 Looking for any .tekton directory:"
+                find . -name ".tekton" -type d 2>/dev/null || echo "No .tekton directory found"
+                echo ""
+                echo "📄 Looking for any YAML files:"
+                find . -name "*.yaml" -o -name "*.yml" 2>/dev/null | head -20 || echo "No YAML files found"
+                echo ""
+                echo "💡 Expected structure:"
+                echo "  📁 .tekton/"
+                echo "  ├── 📁 pipelines/     # Pipeline definitions"
+                echo "  ├── 📁 tasks/         # Task definitions"
+                echo "  └── 📄 *.yaml         # Other Tekton resources"
+                echo ""
+                echo "⚠️  Continuing with no user pipelines to execute..."
+                # Don't exit 1, just continue without user pipelines
+              else
+                echo "🎯 Summary: Found $TOTAL_FILES Tekton YAML files in paths: $FOUND_PATHS"
+                echo "$FOUND_PATHS" > /tmp/tekton-paths
+              fi
+      params:
+        - name: tekton-path
+          value: $(params.tekton-path)
+        - name: repository-name
+          value: $(params.repository-name)
+      workspaces:
+        - name: source
+          workspace: source-code
+
+    - name: validate-tekton-resources
+      runAfter: ["scan-tekton-resources"]
+      taskSpec:
+        workspaces:
+          - name: source
+            description: "Source code workspace"
+        steps:
+          - name: validate-yaml
+            image: bitnami/kubectl:latest
+            workingDir: $(workspaces.source.path)
+            script: |
+              #!/bin/bash
+              echo "✅ Validating Tekton YAML syntax..."
+              
+              # Get the paths found by previous task
+              TEKTON_PATHS=".tekton .tekton/pipelines .tekton/pipeline .tekton/tasks"
+              
+              TOTAL_FILES=0
+              VALID_FILES=0
+              INVALID_FILES=0
+              
+              for path in $TEKTON_PATHS; do
+                if [ -d "$path" ]; then
+                  for file in $(find "$path" -name "*.yaml" -o -name "*.yml"); do
+                    TOTAL_FILES=$((TOTAL_FILES + 1))
+                    echo "🔍 Validating: $file"
+                    
+                    # Basic YAML syntax check
+                    if kubectl apply --dry-run=client -f "$file" &>/dev/null; then
+                      echo "  ✅ Valid Tekton resource"
+                      VALID_FILES=$((VALID_FILES + 1))
+                    else
+                      echo "  ❌ Invalid or non-Tekton resource"
+                      kubectl apply --dry-run=client -f "$file" || true
+                      INVALID_FILES=$((INVALID_FILES + 1))
+                    fi
+                    echo ""
+                  done
+                fi
+              done
+              
+              echo "📊 Validation Summary:"
+              echo "  📄 Total files: $TOTAL_FILES"
+              echo "  ✅ Valid: $VALID_FILES"
+              echo "  ❌ Invalid: $INVALID_FILES"
+              
+              if [ "$VALID_FILES" -eq 0 ]; then
+                echo ""
+                echo "⚠️  No valid Tekton resources found!"
+                exit 1
+              fi
+              
+              echo ""
+              echo "✅ Validation completed successfully!"
+      workspaces:
+        - name: source
+          workspace: source-code
+
+    - name: prepare-target-namespace
+      runAfter: ["validate-tekton-resources"]
+      taskSpec:
+        params:
+          - name: target-namespace-prefix
+          - name: repository-name
+          - name: organization
+        steps:
+          - name: create-namespace
+            image: bitnami/kubectl:latest
+            script: |
+              #!/bin/bash
+              # Create target namespace with safe naming
+              NAMESPACE="$(params.target-namespace-prefix)-$(params.organization)-$(params.repository-name)"
+              # Replace invalid characters with hyphens and convert to lowercase
+              NAMESPACE=$(echo "$NAMESPACE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+              
+              echo "🎯 Preparing target namespace: $NAMESPACE"
+              
+              # Create namespace if it doesn't exist
+              if ! kubectl get namespace "$NAMESPACE" &>/dev/null; then
+                echo "📦 Creating namespace: $NAMESPACE"
+                kubectl create namespace "$NAMESPACE"
+                
+                # Add labels for identification
+                kubectl label namespace "$NAMESPACE" \
+                  app.kubernetes.io/managed-by=reposentry \
+                  reposentry.dev/organization=$(params.organization) \
+                  reposentry.dev/repository=$(params.repository-name) \
+                  reposentry.dev/auto-created=true
+              else
+                echo "✅ Namespace already exists: $NAMESPACE"
+              fi
+              
+              # Save the namespace name for subsequent tasks
+              echo "$NAMESPACE" > /tmp/target-namespace
+              echo "✅ Target namespace ready: $NAMESPACE"
+      params:
+        - name: target-namespace-prefix
+          value: $(params.target-namespace-prefix)
+        - name: repository-name
+          value: $(params.repository-name)
+        - name: organization
+          value: $(params.organization)
+
+    - name: apply-tekton-resources
+      runAfter: ["prepare-target-namespace"]
+      taskSpec:
+        params:
+          - name: tekton-path
+          - name: target-namespace-prefix
+          - name: repository-name
+          - name: organization
+        workspaces:
+          - name: source
+            description: "Source code workspace"
+        steps:
+          - name: apply-resources
+            image: bitnami/kubectl:latest
+            workingDir: $(workspaces.source.path)
+            script: |
+              #!/bin/bash
+              # Calculate target namespace
+              NAMESPACE="$(params.target-namespace-prefix)-$(params.organization)-$(params.repository-name)"
+              NAMESPACE=$(echo "$NAMESPACE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+              
+              echo "🚀 Applying Tekton resources to namespace: $NAMESPACE"
+              
+              # Create a temporary directory for namespace-patched files
+              TMP_DIR="/tmp/tekton-patched-$$"
+              mkdir -p "$TMP_DIR"
+              
+              # Find and categorize Tekton resources
+              TEKTON_PATHS=".tekton .tekton/pipelines .tekton/pipeline .tekton/tasks"
+              
+              for path in $TEKTON_PATHS; do
+                if [ -d "$path" ]; then
+                  echo "📂 Processing directory: $path"
+                  
+                  # Apply Tasks first
+                  TASK_FILES=$(find "$path" -name "*.yaml" -o -name "*.yml" | xargs grep -l "kind: Task" 2>/dev/null || true)
+                  if [ -n "$TASK_FILES" ]; then
+                    echo "📋 Applying Tasks..."
+                    for file in $TASK_FILES; do
+                      echo "  📄 Processing Task from: $file"
+                      # Create patched version with correct namespace
+                      PATCHED_FILE="$TMP_DIR/$(basename "$file")-task"
+                      sed "s/namespace: .*/namespace: $NAMESPACE/" "$file" > "$PATCHED_FILE"
+                      echo "  🔧 Applying Task with corrected namespace"
+                      kubectl apply -f "$PATCHED_FILE"
+                    done
+                  fi
+                  
+                  # Apply Pipelines second
+                  PIPELINE_FILES=$(find "$path" -name "*.yaml" -o -name "*.yml" | xargs grep -l "kind: Pipeline" 2>/dev/null || true)
+                  if [ -n "$PIPELINE_FILES" ]; then
+                    echo "🔄 Applying Pipelines..."
+                    for file in $PIPELINE_FILES; do
+                      echo "  📄 Processing Pipeline from: $file"
+                      # Create patched version with correct namespace
+                      PATCHED_FILE="$TMP_DIR/$(basename "$file")-pipeline"
+                      sed "s/namespace: .*/namespace: $NAMESPACE/" "$file" > "$PATCHED_FILE"
+                      echo "  🔧 Applying Pipeline with corrected namespace"
+                      kubectl apply -f "$PATCHED_FILE"
+                    done
+                  fi
+                  
+                  # Apply other Tekton resources
+                  OTHER_FILES=$(find "$path" -name "*.yaml" -o -name "*.yml" | xargs grep -L "kind: \(Task\|Pipeline\)" 2>/dev/null || true)
+                  if [ -n "$OTHER_FILES" ]; then
+                    echo "🔧 Applying other resources..."
+                    for file in $OTHER_FILES; do
+                      echo "  📄 Processing resource from: $file"
+                      # Create patched version with correct namespace
+                      PATCHED_FILE="$TMP_DIR/$(basename "$file")-other"
+                      sed "s/namespace: .*/namespace: $NAMESPACE/" "$file" > "$PATCHED_FILE"
+                      echo "  🔧 Applying resource with corrected namespace"
+                      kubectl apply -f "$PATCHED_FILE" || echo "  ⚠️  Failed to apply $file (might not be a valid Tekton resource)"
+                    done
+                  fi
+                fi
+              done
+              
+              # Clean up temporary files
+              rm -rf "$TMP_DIR"
+              
+              echo "✅ Resource application completed"
+              
+              # List applied resources
+              echo "📊 Applied Tekton resources in namespace $NAMESPACE:"
+              kubectl get tasks,pipelines,pipelineruns -n "$NAMESPACE" 2>/dev/null || echo "No resources found yet"
+      params:
+        - name: tekton-path
+          value: $(params.tekton-path)
+        - name: target-namespace-prefix
+          value: $(params.target-namespace-prefix)
+        - name: repository-name
+          value: $(params.repository-name)
+        - name: organization
+          value: $(params.organization)
+      workspaces:
+        - name: source
+          workspace: source-code
+
+    - name: execute-user-pipelines
+      runAfter: ["apply-tekton-resources"]
+      taskSpec:
+        params:
+          - name: target-namespace-prefix
+          - name: repository-name
+          - name: organization
+          - name: repository-url
+          - name: branch-name
+          - name: commit-sha
+        workspaces:
+          - name: source
+            description: "Source code workspace"
+        steps:
+          - name: trigger-user-pipelines
+            image: bitnami/kubectl:latest
+            workingDir: $(workspaces.source.path)
+            script: |
+              #!/bin/bash
+              # Calculate target namespace
+              NAMESPACE="$(params.target-namespace-prefix)-$(params.organization)-$(params.repository-name)"
+              NAMESPACE=$(echo "$NAMESPACE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+              
+              echo "🚀 === EXECUTING USER-DEFINED PIPELINES === 🚀"
+              echo "🎯 Target namespace: $NAMESPACE"
+              echo ""
+              
+              # Get list of available pipelines
+              PIPELINES=$(kubectl get pipelines -n "$NAMESPACE" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+              
+              if [ -z "$PIPELINES" ]; then
+                echo "⚠️  No pipelines found in namespace $NAMESPACE"
+                echo "📋 Available resources:"
+                kubectl get all -n "$NAMESPACE" 2>/dev/null || echo "No resources found"
+                exit 0
+              fi
+              
+              echo "📋 Found pipelines: $PIPELINES"
+              echo ""
+              
+              # Execute each pipeline
+              for pipeline in $PIPELINES; do
+                TIMESTAMP=$(date +%s)
+                PIPELINE_RUN_NAME="auto-run-${pipeline}-${TIMESTAMP}"
+                
+                # Calculate git-short-sha
+                GIT_SHORT_SHA=$(echo "$(params.commit-sha)" | cut -c1-8)
+                
+                echo "🎯 Executing pipeline: $pipeline"
+                echo "📝 PipelineRun name: $PIPELINE_RUN_NAME"
+                echo "📝 Git short SHA: $GIT_SHORT_SHA"
+                
+                # Create PipelineRun with common parameters
+                cat <<EOF | kubectl apply -f -
+              apiVersion: tekton.dev/v1beta1
+              kind: PipelineRun
+              metadata:
+                name: ${PIPELINE_RUN_NAME}
+                namespace: ${NAMESPACE}
+                labels:
+                  triggered-by: reposentry-bootstrap
+                  reposentry.dev/organization: $(params.organization)
+                  reposentry.dev/repository: $(params.repository-name)
+                  reposentry.dev/auto-triggered: "true"
+                annotations:
+                  reposentry.dev/repository-url: $(params.repository-url)
+                  reposentry.dev/commit-sha: $(params.commit-sha)
+                  reposentry.dev/source-branch: $(params.branch-name)
+              spec:
+                pipelineRef:
+                  name: ${pipeline}
+                params:
+                  - name: git-url
+                    value: "$(params.repository-url)"
+                  - name: git-revision
+                    value: "$(params.branch-name)"
+                  - name: git-short-sha
+                    value: "${GIT_SHORT_SHA}"
+                  - name: repository-url
+                    value: "$(params.repository-url)"
+                  - name: branch-name
+                    value: "$(params.branch-name)"
+                  - name: commit-sha
+                    value: "$(params.commit-sha)"
+                workspaces:
+                  - name: shared-data
+                    volumeClaimTemplate:
+                      spec:
+                        accessModes:
+                          - ReadWriteOnce
+                        resources:
+                          requests:
+                            storage: 1Gi
+                  - name: source
+                    volumeClaimTemplate:
+                      spec:
+                        accessModes:
+                          - ReadWriteOnce
+                        resources:
+                          requests:
+                            storage: 1Gi
+              EOF
+                
+                if [ $? -eq 0 ]; then
+                  echo "✅ Successfully created PipelineRun: $PIPELINE_RUN_NAME"
+                  echo "🌐 Monitor at: Tekton Dashboard -> Namespace: $NAMESPACE -> PipelineRuns"
+                else
+                  echo "❌ Failed to create PipelineRun for pipeline: $pipeline"
+                fi
+                echo ""
+              done
+              
+              echo "🎉 User pipeline execution completed!"
+              echo "📊 All resources in namespace $NAMESPACE:"
+              kubectl get tasks,pipelines,pipelineruns -n "$NAMESPACE" 2>/dev/null || echo "No resources found"
+      params:
+        - name: target-namespace-prefix
+          value: $(params.target-namespace-prefix)
+        - name: repository-name
+          value: $(params.repository-name)
+        - name: organization
+          value: $(params.organization)
+        - name: repository-url
+          value: $(params.repository-url)
+        - name: branch-name
+          value: $(params.branch-name)
+        - name: commit-sha
+          value: $(params.commit-sha)
+      workspaces:
+        - name: source
+          workspace: source-code

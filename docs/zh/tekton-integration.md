@@ -241,7 +241,7 @@ spec:
           cloudevents.io/spec-version: $(tt.params.spec-version)
           
           # === Tekton 标准标签 ===
-          tekton.dev/pipeline: reposentry-ci-pipeline
+          tekton.dev/pipeline: reposentry-demo-pipeline
           
         annotations:
           reposentry.dev/repository-url: $(tt.params.repository-url)
@@ -250,7 +250,7 @@ spec:
           
       spec:
         pipelineRef:
-          name: reposentry-ci-pipeline
+          name: reposentry-demo-pipeline
         params:
           - name: provider
             value: $(tt.params.provider)
@@ -279,7 +279,7 @@ spec:
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
-  name: reposentry-ci-pipeline
+  name: reposentry-demo-pipeline
   namespace: default
   labels:
     app.kubernetes.io/name: reposentry
