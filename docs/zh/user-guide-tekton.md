@@ -4,6 +4,16 @@
 
 RepoSentry 的 Tekton 集成功能允许您在自己的代码仓库中定义 Tekton 流水线，当代码发生变更时，这些流水线会自动执行。这个过程对您来说是完全透明的 - 您只需要在仓库中添加 `.tekton/` 目录和相关的 YAML 文件即可。
 
+### 🔧 当前可用功能
+- ✅ **自动检测**：监控您仓库中的 `.tekton/` 目录变化
+- ✅ **透明执行**：代码提交后自动执行您的 Tekton 流水线
+- ✅ **配置化路径**：管理员可配置和控制检测路径
+- ✅ **智能发现**：自动发现您仓库中的 Tekton 资源并提供建议
+- ✅ **安全隔离**：为您的仓库提供独立的执行环境
+
+### 📋 长远计划功能
+- 📋 **企业治理**：分层配置管理和策略治理（暂时不可用）
+
 ## 🚀 快速开始
 
 ### 第一步：在您的仓库中创建 Tekton 资源
@@ -146,11 +156,15 @@ git push origin main
 提交代码后，RepoSentry 会自动检测到您的 Tekton 资源并执行 Pipeline。您可以通过以下方式查看执行状态：
 
 ```bash
-# 查看您的命名空间中的 PipelineRun
-kubectl get pipelineruns -n reposentry-user-{your-username}-{your-repo}
+# 查看您的命名空间中的 PipelineRun (使用哈希命名空间)
+kubectl get pipelineruns -n reposentry-user-{namespace-hash}
 
 # 查看 Pipeline 执行日志
-kubectl logs -f pipelinerun/{pipelinerun-name} -n reposentry-user-{your-username}-{your-repo}
+kubectl logs -f pipelinerun/{pipelinerun-name} -n reposentry-user-{namespace-hash}
+
+# 注意：namespace-hash 是根据您的仓库信息生成的哈希值
+# 可以通过以下命令查询您的命名空间：
+kubectl get namespaces -l reposentry.dev/repository={your-repo}
 ```
 
 ## 📁 目录结构建议
@@ -164,13 +178,30 @@ kubectl logs -f pipelinerun/{pipelinerun-name} -n reposentry-user-{your-username
 │   ├── build-task.yaml
 │   ├── test-task.yaml
 │   └── deploy-task.yaml
+├── pipelines/                 # 多个流水线
+│   ├── ci-pipeline.yaml
+│   ├── cd-pipeline.yaml
+│   └── release-pipeline.yaml
 ├── triggers/                  # 触发器配置（可选）
 │   ├── binding.yaml
 │   └── template.yaml
-└── configs/                   # 配置文件
-    ├── workspace-template.yaml
-    └── secrets-template.yaml
+├── configs/                   # 配置文件
+│   ├── workspace-template.yaml
+│   └── secrets-template.yaml
+└── environments/              # 环境特定配置
+    ├── dev/
+    │   └── pipeline.yaml
+    ├── staging/
+    │   └── pipeline.yaml
+    └── prod/
+        └── pipeline.yaml
 ```
+
+**注意**：
+- ✅ 支持在 `.tekton/` 下创建任意层级的子目录
+- ✅ 所有 `.yaml` 和 `.yml` 文件都会被自动检测
+- ✅ 可以按功能、环境或团队组织文件结构
+- ❌ 不支持 `.tekton/` 目录外的 Tekton 资源
 
 ## 🔧 常用 Tekton 资源示例
 
@@ -544,16 +575,16 @@ spec:
 
 ```bash
 # 列出您的命名空间中的所有 PipelineRun
-kubectl get pipelineruns -n reposentry-user-{username}-{repo}
+kubectl get pipelineruns -n reposentry-user-{namespace-hash}
 
 # 查看特定 PipelineRun 的详细信息
-kubectl describe pipelinerun {pipelinerun-name} -n reposentry-user-{username}-{repo}
+kubectl describe pipelinerun {pipelinerun-name} -n reposentry-user-{namespace-hash}
 
 # 查看实时日志
-kubectl logs -f pipelinerun/{pipelinerun-name} -n reposentry-user-{username}-{repo}
+kubectl logs -f pipelinerun/{pipelinerun-name} -n reposentry-user-{namespace-hash}
 
 # 查看特定任务的日志
-kubectl logs -f pipelinerun/{pipelinerun-name} -c step-{step-name} -n reposentry-user-{username}-{repo}
+kubectl logs -f pipelinerun/{pipelinerun-name} -c step-{step-name} -n reposentry-user-{namespace-hash}
 ```
 
 ### 常见问题解决

@@ -4,6 +4,18 @@
 
 本文档详细描述了 RepoSentry 的 Tekton 自动检测与执行功能的架构设计。该功能使用户能够在自己的业务代码仓库中编写 `.tekton/` 目录下的 Tekton 资源定义，当代码发生变更时，RepoSentry 会自动检测并执行这些用户自定义的 Tekton 流水线。
 
+## 🎯 核心功能目标
+
+### 当前实施目标
+1. **自动检测**：监控用户仓库中的 `.tekton/` 目录变化
+2. **透明执行**：用户无感知的自动化 Tekton 资源应用和执行
+3. **配置化路径**：支持管理员配置和控制检测路径
+4. **智能发现**：自动发现用户仓库中的 Tekton 资源并提供建议
+5. **安全隔离**：为每个用户仓库提供独立的执行环境
+
+### 长远计划
+6. **企业治理**：支持分层配置管理和策略治理 📋 **长期计划，暂不实现**
+
 ## 🏗️ 核心设计原则
 
 ### 用户透明性
@@ -119,17 +131,21 @@ type TektonDetector interface {
 }
 
 type TektonDetection struct {
-    HasTektonDir   bool     `json:"has_tekton_dir"`
-    TektonFiles    []string `json:"tekton_files"`
-    ResourceTypes  []string `json:"resource_types"`  // Pipeline, Task, etc.
-    EstimatedAction string   `json:"estimated_action"` // apply_and_trigger, apply_only
+    HasTektonDir     bool          `json:"has_tekton_dir"`
+    TektonFiles      []string      `json:"tekton_files"`
+    ResourceTypes    []string      `json:"resource_types"`  // Pipeline, Task, etc.
+    EstimatedAction  string        `json:"estimated_action"` // apply_and_trigger, apply_only, validate_only, skip
+    ValidationErrors []string      `json:"validation_errors,omitempty"`
+    ScanDuration     time.Duration `json:"scan_duration"`
+    SecurityWarnings []string      `json:"security_warnings,omitempty"`
 }
 ```
 
 **实现逻辑**：
-1. **轻量级检测**：使用 Git API 的文件列表功能，无需克隆完整仓库
-2. **文件类型分析**：识别 Pipeline、Task、PipelineRun 等资源类型
-3. **智能建议**：根据资源类型建议后续处理动作
+1. **固定路径检测**：只扫描 `.tekton/` 目录及其所有子目录
+2. **轻量级检测**：使用 Git API 的文件列表功能，无需克隆完整仓库  
+3. **文件类型分析**：识别 Pipeline、Task、PipelineRun 等资源类型
+4. **子目录支持**：支持用户在 `.tekton/` 下创建任意层级的组织结构
 
 ### 2. TektonTrigger 组件
 
@@ -222,12 +238,17 @@ Bootstrap Pipeline 是整个架构的核心执行组件，负责：
 ### 命名空间策略
 
 ```yaml
-# 命名空间命名规则
-namespace: "reposentry-user-{owner}-{repo-name}"
+# 命名空间命名规则（安全改进版）
+namespace: "reposentry-user-{hash(owner-repo)}"
 
-# 示例
-# github.com/johndoe/my-app -> reposentry-user-johndoe-my-app
-# gitlab.com/company/project -> reposentry-user-company-project
+# 示例（使用哈希值避免特殊字符问题）
+# github.com/johndoe/my-app -> reposentry-user-abc123def456
+# gitlab.com/company/project -> reposentry-user-xyz789uvw012
+
+# 映射关系存储在ConfigMap中：
+# reposentry-namespace-mapping:
+#   abc123def456: johndoe/my-app
+#   xyz789uvw012: company/project
 ```
 
 ### 资源配额策略
@@ -353,20 +374,83 @@ POST /api/v1/tekton/repositories/{repo}/trigger # 手动触发（调试用）
 ### 代码安全扫描
 
 ```yaml
-# 在 Bootstrap Pipeline 中添加安全扫描步骤
+# 在 Bootstrap Pipeline 中添加增强的安全扫描步骤
 - name: security-scan
   taskSpec:
     steps:
       - name: scan-tekton-resources
         image: security-scanner:latest
         script: |
-          # 扫描 YAML 文件中的敏感信息
+          #!/bin/bash
+          set -euo pipefail
+          
+          echo "🔐 Starting security scan of Tekton resources..."
+          
+          # 扫描敏感信息
           for file in /workspace/source/.tekton/*.yaml; do
-            # 检查硬编码的密码、令牌等
-            if grep -i "password\|token\|secret" "$file"; then
-              echo "WARNING: Potential sensitive data in $file"
+            if grep -i "password\|token\|secret\|key\|credential" "$file"; then
+              echo "❌ SECURITY WARNING: Potential sensitive data in $file"
+              exit 1
             fi
           done
+          
+          # 检查危险配置
+          for file in /workspace/source/.tekton/*.yaml; do
+            # 检查privileged容器
+            if grep -i "privileged.*true" "$file"; then
+              echo "❌ SECURITY VIOLATION: Privileged container found in $file"
+              exit 1
+            fi
+            
+            # 检查hostPath挂载
+            if grep -i "hostPath" "$file"; then
+              echo "❌ SECURITY VIOLATION: hostPath mount found in $file"  
+              exit 1
+            fi
+            
+            # 检查root用户
+            if grep -i "runAsUser.*0" "$file"; then
+              echo "⚠️  SECURITY WARNING: Root user detected in $file"
+            fi
+          done
+          
+          echo "✅ Security scan completed successfully"
+```
+
+### 安全最佳实践
+
+#### 用户YAML验证规则
+- **禁止privileged容器**：防止容器获得主机级权限
+- **限制hostPath挂载**：避免访问主机文件系统  
+- **强制资源限制**：防止资源耗尽攻击
+- **禁止访问敏感ConfigMap/Secret**：限制对集群敏感数据的访问
+- **网络策略限制**：控制出入站网络流量
+
+#### 命名空间安全策略
+```yaml
+# 自动应用到用户命名空间的安全策略
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: reposentry-user-psp
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  requiredDropCapabilities:
+    - ALL
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  seLinux:
+    rule: 'RunAsAny'
+  fsGroup:
+    rule: 'RunAsAny'
 ```
 
 ## 🎯 配置管理
@@ -390,11 +474,14 @@ tekton_integration:
     resource_quota_template: "default-quota"
     network_policy_enabled: true
     
-  # 检测配置
+  # 检测配置（固定 .tekton/ 路径）
   detection:
-    tekton_paths: [".tekton/", ".tekton/pipelines/", ".tekton/tasks/"]
+    scan_depth: 5  # .tekton/ 子目录最大扫描深度
     supported_extensions: [".yaml", ".yml"]
     max_files_scan: 50
+    ignore_patterns: ["*.template.*", "*/test/*", "*/examples/*"]  # 忽略模式
+    file_size_limit: "1MB"  # 单文件大小限制
+    cache_ttl: "1h"  # 检测结果缓存时间
     
   # 安全配置
   security:
@@ -493,8 +580,8 @@ reposentry_tekton_user_namespaces_total{status}
 
 ## 📚 相关文档
 
-- [Tekton 集成用户指南](tekton-integration-user-guide.md)
-- [Bootstrap Pipeline 开发指南](tekton-bootstrap-development.md)
-- [安全最佳实践](tekton-security-best-practices.md)
-- [故障排除指南](tekton-troubleshooting.md)
+- [用户指南 - Tekton集成](user-guide-tekton.md)
+- [实施计划](implementation-plan.md)
+- [故障排除指南](troubleshooting.md)
+- [架构设计](architecture.md)
 
