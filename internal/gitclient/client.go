@@ -29,6 +29,15 @@ type GitClient interface {
 
 	// Close releases any resources
 	Close() error
+
+	// ListFiles retrieves all files in a specific path for a commit
+	ListFiles(ctx context.Context, repo types.Repository, commitSHA, path string) ([]string, error)
+
+	// GetFileContent retrieves the content of a specific file
+	GetFileContent(ctx context.Context, repo types.Repository, commitSHA, filePath string) ([]byte, error)
+
+	// CheckDirectoryExists checks if a directory exists in the repository
+	CheckDirectoryExists(ctx context.Context, repo types.Repository, commitSHA, dirPath string) (bool, error)
 }
 
 // ClientConfig represents common configuration for Git clients

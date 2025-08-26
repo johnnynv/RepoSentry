@@ -28,6 +28,13 @@
 - **资源配额限制**：防止单个用户消耗过多集群资源
 - **权限最小化**：Bootstrap Pipeline 仅拥有必要的最小权限
 
+**强隔离性详细说明**：
+- **完全资源隔离**：每个仓库在独立命名空间中运行，无法访问其他仓库的资源
+- **网络层隔离**：通过NetworkPolicy严格控制网络访问，默认拒绝跨命名空间通信
+- **计算资源隔离**：ResourceQuota确保每个仓库的CPU、内存使用在可控范围内
+- **存储隔离**：PVC和Volume挂载仅限于自身命名空间
+- **身份隔离**：每个命名空间使用独立的ServiceAccount和RBAC权限
+
 ### 可扩展性
 - **支持任意 Tekton 资源**：Pipeline、Task、PipelineRun 等
 - **多仓库支持**：同时监控多个用户仓库
@@ -227,6 +234,136 @@ type BootstrapStatus struct {
 
 ## 🚀 Bootstrap Pipeline 架构
 
+### 预部署基础设施设计
+
+#### 为什么采用预部署而非动态生成？
+
+**设计背景**：Bootstrap Pipeline 作为 RepoSentry 系统的核心基础设施，在系统部署时预先安装到 Tekton 集群中，避免运行时的循环依赖问题。
+
+**1. 解决循环依赖**
+```
+旧设计问题：
+RepoSentry检测变化 → 动态生成Bootstrap Pipeline → 部署 → 执行
+                    ↑_______________________|
+                    (需要Pipeline已存在才能触发)
+
+新设计方案：
+系统部署阶段：RepoSentry部署 → 同时部署静态Bootstrap Pipeline → Tekton集群就绪
+运行时阶段：RepoSentry检测变化 → 触发已存在的Bootstrap Pipeline → 处理用户.tekton/
+```
+
+**2. 基础设施即代码**
+```yaml
+# Bootstrap Pipeline作为系统基础设施预部署
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: reposentry-bootstrap-pipeline
+  namespace: reposentry-system
+spec:
+  params:
+  - name: repo-url
+    description: "用户仓库URL，运行时传入"
+  - name: repo-branch
+    description: "目标分支，运行时传入"
+  - name: commit-sha
+    description: "提交SHA，运行时传入"
+  tasks:
+  - name: clone-user-repo
+  - name: detect-tekton-resources
+  - name: create-user-namespace
+  - name: apply-user-tekton-resources
+  - name: trigger-user-pipeline
+```
+
+**3. 参数化运行时配置**
+```go
+// 运行时只需要传递参数，无需生成Pipeline
+func TriggerBootstrapPipeline(repo Repository, commit string) {
+    params := map[string]string{
+        "repo-url":    repo.URL,
+        "repo-branch": repo.Branch,
+        "commit-sha":  commit,
+    }
+    // 触发预部署的Bootstrap Pipeline
+    tekton.CreatePipelineRun("reposentry-bootstrap-pipeline", params)
+}
+```
+
+#### 预部署架构流程
+
+```mermaid
+graph TD
+    A[RepoSentry系统部署] --> B[部署Bootstrap Pipeline]
+    B --> C[部署Bootstrap Tasks]
+    C --> D[配置RBAC权限]
+    D --> E[创建系统ServiceAccount]
+    E --> F[Tekton集群就绪]
+    
+    F --> G[用户仓库变化]
+    G --> H[RepoSentry检测]
+    H --> I[发送CloudEvents]
+    I --> J[触发预部署的Bootstrap Pipeline]
+    J --> K[Bootstrap Pipeline执行]
+    
+    K --> L[克隆用户仓库]
+    L --> M[扫描.tekton目录]
+    M --> N[创建用户命名空间]
+    N --> O[应用用户Tekton资源]
+    O --> P[触发用户Pipeline]
+```
+
+#### 预部署的优势
+
+**1. 避免循环依赖**
+- Bootstrap Pipeline在系统启动前就存在
+- RepoSentry只需触发，无需创建Pipeline
+- 解决了"鸡生蛋，蛋生鸡"的问题
+
+**2. 系统稳定性**
+- Bootstrap Pipeline作为系统核心组件，稳定可靠
+- 减少运行时的复杂度和失败点
+- 便于系统监控和故障排查
+
+**3. 参数化灵活性**
+- 通过参数传递实现动态配置
+- 支持多仓库并发处理
+- 保持单一Pipeline，减少资源消耗
+
+#### 系统组件分层
+
+| 层级 | 组件 | 部署时机 | 作用 |
+|------|------|----------|------|
+| 基础设施层 | Bootstrap Pipeline | 系统部署时 | 提供Tekton资源处理能力 |
+| 基础设施层 | Bootstrap Tasks | 系统部署时 | 实现具体的处理逻辑 |
+| 基础设施层 | System RBAC | 系统部署时 | 提供必要的权限控制 |
+| 运行时层 | User Namespace | Pipeline运行时 | 为用户仓库提供隔离环境 |
+| 运行时层 | User Tekton Resources | Pipeline运行时 | 用户自定义的Pipeline/Task |
+| 运行时层 | User PipelineRun | Pipeline运行时 | 执行用户的具体工作流 |
+
+#### 部署和运行流程
+
+**部署阶段（一次性）：**
+```bash
+# 1. 生成Bootstrap Pipeline YAML
+reposentry generate bootstrap-pipeline --output bootstrap-pipeline.yaml
+
+# 2. 部署到Tekton集群
+kubectl apply -f bootstrap-pipeline.yaml
+
+# 3. 配置EventListener指向Bootstrap Pipeline
+kubectl apply -f eventlistener-config.yaml
+```
+
+**运行阶段（持续）：**
+```bash
+# RepoSentry自动执行
+1. 监控用户仓库变化
+2. 发送CloudEvents到EventListener  
+3. EventListener触发Bootstrap Pipeline
+4. Bootstrap Pipeline处理用户.tekton/文件
+```
+
 ### Pipeline 整体设计
 
 Bootstrap Pipeline 是整个架构的核心执行组件，负责：
@@ -237,19 +374,48 @@ Bootstrap Pipeline 是整个架构的核心执行组件，负责：
 
 ### 命名空间策略
 
+**一仓库一命名空间原则**：
+- 每个用户仓库分配独立的Kubernetes命名空间，实现完全隔离
+- 适用规模：建议在500个仓库以下使用，超过此规模需考虑性能优化
+- 清理策略：提供手动清理工具，长远计划实现自动生命周期管理
+
 ```yaml
-# 命名空间命名规则（安全改进版）
-namespace: "reposentry-user-{hash(owner-repo)}"
+# 命名空间命名规则（语义化改进版）
+namespace: "reposentry-user-repo-{hash(owner-repo)}"
 
 # 示例（使用哈希值避免特殊字符问题）
-# github.com/johndoe/my-app -> reposentry-user-abc123def456
-# gitlab.com/company/project -> reposentry-user-xyz789uvw012
+# github.com/johndoe/my-app -> reposentry-user-repo-abc123def456
+# gitlab.com/company/project -> reposentry-user-repo-xyz789uvw012
 
 # 映射关系存储在ConfigMap中：
 # reposentry-namespace-mapping:
-#   abc123def456: johndoe/my-app
-#   xyz789uvw012: company/project
+#   abc123def456: "johndoe/my-app"
+#   xyz789uvw012: "company/project"
 ```
+
+**性能和扩展性考虑**：
+```yaml
+# 命名空间规模影响分析
+小规模 (< 100个仓库):
+  etcd额外内存: ~50MB
+  API响应延迟: +5ms
+  影响程度: 可忽略
+  
+中等规模 (100-500个仓库):
+  etcd额外内存: ~250MB
+  API响应延迟: +10ms  
+  影响程度: 轻微，可接受
+  
+大规模 (> 500个仓库):
+  建议: 评估性能影响，考虑优化策略
+  监控: 重点监控API响应时间和etcd内存使用
+```
+
+**命名空间生命周期管理**：
+- **创建时机**：检测到仓库包含.tekton/目录时自动创建
+- **标记策略**：为命名空间添加创建时间、最后活动时间等标签
+- **清理机制**：当前阶段提供手动清理工具，长远计划实现自动清理
+- **监控指标**：跟踪命名空间总数、活跃度、资源使用情况
 
 ### 资源配额策略
 
@@ -258,7 +424,7 @@ apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: tekton-quota
-  namespace: reposentry-user-{owner}-{repo}
+  namespace: reposentry-user-repo-{hash}
 spec:
   hard:
     # 计算资源限制
@@ -288,7 +454,7 @@ apiVersion: v1
 kind: NetworkPolicy
 metadata:
   name: tekton-network-policy
-  namespace: reposentry-user-{owner}-{repo}
+  namespace: reposentry-user-repo-{hash}
 spec:
   podSelector: {}
   policyTypes:

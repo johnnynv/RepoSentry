@@ -8,9 +8,10 @@ import (
 type EventType string
 
 const (
-	EventTypeBranchUpdated EventType = "branch_updated"
-	EventTypeBranchCreated EventType = "branch_created"
-	EventTypeBranchDeleted EventType = "branch_deleted"
+	EventTypeBranchUpdated  EventType = "branch_updated"
+	EventTypeBranchCreated  EventType = "branch_created"
+	EventTypeBranchDeleted  EventType = "branch_deleted"
+	EventTypeTektonDetected EventType = "tekton_detected"
 )
 
 // Event represents a Git repository event
@@ -75,4 +76,70 @@ type TektonCommit struct {
 	Author    string    `json:"author,omitempty"`
 	Timestamp time.Time `json:"timestamp,omitempty"`
 	URL       string    `json:"url,omitempty"`
+}
+
+// TektonDetectionEvent represents an event containing Tekton resource detection results
+// This event is generated when .tekton/ directory resources are detected in a repository
+type TektonDetectionEvent struct {
+	// Standard event fields
+	Source    string    `json:"source"`     // "reposentry"
+	EventType string    `json:"event_type"` // "tekton_detected"
+	EventID   string    `json:"event_id"`
+	Timestamp time.Time `json:"timestamp"`
+
+	// Repository context
+	Repository TektonRepository `json:"repository"`
+	Branch     TektonBranch     `json:"branch"`
+	Commit     TektonCommit     `json:"commit"`
+	Provider   string           `json:"provider"`
+
+	// Tekton detection results
+	Detection TektonDetectionPayload `json:"detection"`
+
+	// Event metadata
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// TektonDetectionPayload contains the actual detection results
+type TektonDetectionPayload struct {
+	// Detection metadata
+	HasTektonDirectory bool      `json:"has_tekton_directory"`
+	ScanPath           string    `json:"scan_path"`
+	DetectedAt         time.Time `json:"detected_at"`
+
+	// File summary
+	TotalFiles int `json:"total_files"`
+	ValidFiles int `json:"valid_files"`
+
+	// Resource summary
+	Resources      []TektonResourceSummary `json:"resources"`
+	ResourceCounts map[string]int          `json:"resource_counts"` // "Pipeline": 2, "Task": 5, etc.
+
+	// Action determination
+	EstimatedAction string   `json:"estimated_action"` // "apply", "trigger", "validate", "skip"
+	ActionReasons   []string `json:"action_reasons,omitempty"`
+
+	// Processing results
+	Errors   []string `json:"errors,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+// TektonResourceSummary provides a summary of detected Tekton resources
+type TektonResourceSummary struct {
+	// Basic resource info
+	APIVersion string `json:"api_version"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace,omitempty"`
+
+	// Source info
+	FilePath      string `json:"file_path"`
+	ResourceIndex int    `json:"resource_index"`
+
+	// Validation status
+	IsValid bool     `json:"is_valid"`
+	Errors  []string `json:"errors,omitempty"`
+
+	// Dependencies (referenced resources)
+	Dependencies []string `json:"dependencies,omitempty"`
 }

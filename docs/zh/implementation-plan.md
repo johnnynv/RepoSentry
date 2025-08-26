@@ -2,17 +2,19 @@
 
 ## 🎯 项目概述
 
-本文档提供了 RepoSentry Tekton 集成功能的完整实施计划，整合了 Bootstrap Pipeline 方案和配置化路径支持功能。项目采用四阶段渐进式开发策略，确保每个阶段都能提供独立的业务价值。
+本文档提供了 RepoSentry Tekton 集成功能的实施计划，专注于 Bootstrap Pipeline 核心方案。项目采用单阶段集中开发策略，确保快速交付核心业务价值，其他高级功能作为长远计划保留。
 
 ## 📋 总体目标和功能范围
 
-### 核心功能目标
+### 核心功能目标（当前实施）
 1. **自动检测**：监控用户仓库中的 `.tekton/` 目录变化
 2. **透明执行**：用户无感知的自动化 Tekton 资源应用和执行  
-3. **配置化路径**：支持管理员配置和控制检测路径
-4. **智能发现**：自动发现用户仓库中的 Tekton 资源并提供建议
-5. **安全隔离**：为每个用户仓库提供独立的执行环境
-6. **企业治理**：支持分层配置管理和策略治理 (长期目标，暂不实现)
+3. **安全隔离**：为每个用户仓库提供独立的执行环境
+
+### 长远计划功能
+4. **配置化路径**：支持管理员配置和控制检测路径 📋 **长期计划，暂不实现**
+5. **智能发现**：自动发现用户仓库中的 Tekton 资源并提供建议 📋 **长期计划，暂不实现**
+6. **企业治理**：支持分层配置管理和策略治理 📋 **长期计划，暂不实现**
 
 ### 技术约束
 - 用户完全不知道 RepoSentry 的存在
@@ -54,10 +56,11 @@
       HasTektonDir     bool          `json:"has_tekton_dir"`
       TektonFiles      []string      `json:"tekton_files"`
       ResourceTypes    []string      `json:"resource_types"`
-      EstimatedAction  string        `json:"estimated_action"` // apply_and_trigger, apply_only, validate_only, skip
-      ValidationErrors []string      `json:"validation_errors,omitempty"`
-      ScanDuration     time.Duration `json:"scan_duration"`
-      SecurityWarnings []string      `json:"security_warnings,omitempty"`
+      EstimatedAction  string        `json:"estimated_action"` // apply_and_trigger, apply_only
+      // 长远计划字段（暂不实施）：
+      // ValidationErrors []string      `json:"validation_errors,omitempty"`
+      // ScanDuration     time.Duration `json:"scan_duration"`
+      // SecurityWarnings []string      `json:"security_warnings,omitempty"`
   }
   ```
 
@@ -80,91 +83,210 @@
 - **任务目标**：支持 Tekton 增强 CloudEvents 格式
 - **任务 1.3**：扩展事件类型和 CloudEvents 格式
 
-#### 第 2 周：Bootstrap Pipeline 开发
+#### 第 2 周：Bootstrap Pipeline 基础设施开发
 
-**Bootstrap Pipeline YAML 设计 (2人天)**
-- **任务目标**：设计通用 Bootstrap Pipeline 架构和 YAML 资源
-- **任务 2.1**：设计通用 Bootstrap Pipeline
+**静态 Bootstrap Pipeline 生成器 (2人天)**
+- **任务目标**：创建 Bootstrap Pipeline 静态 YAML 生成工具，避免运行时循环依赖
+- **任务 2.1**：开发静态 Pipeline 生成器
+  ```go
+  // 新增文件：cmd/reposentry/generate.go
+  func generateBootstrapPipelineCommand() *cobra.Command {
+      // 生成静态Bootstrap Pipeline YAML文件
+      // 用于系统部署时预安装到Tekton集群
+  }
+  
+  // 新增文件：internal/tekton/static_generator.go
+  type StaticBootstrapGenerator struct {
+      config *BootstrapConfig
+  }
+  
+  func (g *StaticBootstrapGenerator) GenerateStaticYAML() (*StaticBootstrapResources, error) {
+      // 生成预部署的Pipeline、Tasks、RBAC等
+  }
+  ```
+
+**基础设施 YAML 模板设计 (2人天)**
+- **任务目标**：设计预部署的 Bootstrap Pipeline 基础设施
+- **任务 2.2**：创建基础设施模板
   ```
   deployments/tekton/bootstrap/
-  ├── bootstrap-pipeline.yaml
-  ├── bootstrap-triggerbinding.yaml  
-  ├── bootstrap-triggertemplate.yaml
-  ├── bootstrap-eventlistener.yaml
-  ├── rbac/
-  │   ├── serviceaccount.yaml
-  │   ├── role.yaml
-  │   └── rolebinding.yaml
-  └── templates/
-      ├── namespace-template.yaml
-      ├── resourcequota-template.yaml
-      └── networkpolicy-template.yaml
-  ```
-
-**TektonTrigger 组件开发 (2人天)**
-- **任务目标**：实现 Bootstrap Pipeline 自动触发和生命周期管理
-- **任务 2.2**：开发 Bootstrap Pipeline 触发器
-  ```go
-  // 新增文件：internal/tekton/trigger.go
-  type TektonTrigger struct {
-      kubeClient     kubernetes.Interface
-      tektonClient   tektonclient.Interface
-      eventSender    EventSender
-      config         *TektonConfig
-  }
+  ├── 00-namespace.yaml              # reposentry-system 命名空间
+  ├── 01-bootstrap-pipeline.yaml     # 核心Bootstrap Pipeline
+  ├── 02-bootstrap-tasks/            # 预定义Tasks
+  │   ├── clone-repository-task.yaml
+  │   ├── detect-tekton-task.yaml
+  │   ├── create-namespace-task.yaml
+  │   ├── apply-resources-task.yaml
+  │   └── trigger-pipeline-task.yaml
+  ├── 03-rbac/                       # 系统级权限
+  │   ├── system-serviceaccount.yaml
+  │   ├── system-clusterrole.yaml
+  │   └── system-clusterrolebinding.yaml
+  ├── 04-eventlistener.yaml          # 更新的EventListener配置
+  └── install.sh                     # 一键部署脚本
   ```
 
 **用户命名空间管理 (1人天)**
 - **任务目标**：实现安全的用户环境隔离和资源配额控制
 - **任务 2.3**：实现用户环境隔离和资源配额
+  
+  **详细说明**：
+  
+  **命名空间隔离策略**：
+  - 每个用户仓库分配独立的 Kubernetes 命名空间
+  - 命名规则：`reposentry-user-repo-{hash(owner/repo)}` （使用SHA256哈希前12位）
+  - 示例：`github.com/user/myapp` → `reposentry-user-repo-abc123def456`
+  - 命名空间映射关系存储在ConfigMap中供查询和管理
+  
+  **基础资源配额控制**：
+  ```yaml
+  # 每个用户命名空间的资源限制
+  计算资源:
+    requests.cpu: "1"      # CPU请求限制
+    requests.memory: "2Gi" # 内存请求限制
+    limits.cpu: "2"        # CPU最大限制  
+    limits.memory: "4Gi"   # 内存最大限制
+  
+  对象数量限制:
+    pods: "5"              # 最多5个Pod
+    secrets: "5"           # 最多5个Secret
+    configmaps: "5"        # 最多5个ConfigMap
+    
+  Tekton资源限制:
+    pipelines.tekton.dev: "3"        # 最多3个Pipeline
+    pipelineruns.tekton.dev: "10"    # 最多10个并发PipelineRun
+    tasks.tekton.dev: "10"           # 最多10个Task
+  ```
+  
+  **网络安全隔离**：
+  - 默认拒绝所有入站流量
+  - 仅允许必要的出站流量：DNS(53)、HTTPS(443)、SSH(22)
+  - 禁止跨命名空间通信
+  
+  **RBAC权限控制**：
+  - 每个命名空间创建专用ServiceAccount
+  - 最小权限原则：仅能管理自身命名空间内的Tekton资源
+  - 禁止访问集群级别资源
+  
+  **性能和规模考虑**：
+  - 适用范围：500个仓库以下（推荐）
+  - 性能影响：每个命名空间约占用etcd 0.5MB内存
+  - 监控指标：命名空间总数、API响应延迟、资源使用率
+  - 清理策略：标记非活跃命名空间，提供手动清理工具
+  
+  **实现要点**：
+  - 强制安全上下文：非root用户运行，只读根文件系统
+  - 自动标签管理：为资源添加仓库、组织、创建时间等标签
+  - 生命周期跟踪：记录命名空间创建、最后活动、状态变更
 
-#### 第 3 周：集成和测试
+#### 第 3 周：系统集成和测试
 
-**Poller 集成 (2人天)**
-- **任务目标**：将 Tekton 检测无缝集成到现有轮询架构
-- **任务 3.1**：将 Tekton 检测集成到轮询流程
-- **任务 3.2**：扩展 CloudEvents 格式
+**RepoSentry 触发逻辑简化 (2人天)**
+- **任务目标**：简化 RepoSentry 触发逻辑，移除动态生成复杂度
+- **任务 3.1**：重构触发流程
+  ```go
+  // 简化后的触发逻辑
+  func (p *PollerImpl) processTektonChange(repo Repository, change Change) error {
+      // 1. 检测.tekton目录变化
+      detected := tektonDetector.DetectChanges(repo, change)
+      
+      // 2. 发送CloudEvents到预部署的EventListener
+      event := cloudevents.NewEvent()
+      event.SetType("dev.reposentry.repository.tekton_change")
+      event.SetData(detected)
+      
+      // 3. 触发预部署的Bootstrap Pipeline（无需动态生成）
+      return eventSender.Send(event)
+  }
+  ```
 
-**端到端测试 (2人天)**
-- **任务目标**：验证从代码变更到 Pipeline 执行的完整流程
-- **任务 3.3**：实现完整的端到端测试流程
+**Bootstrap Pipeline 部署和配置 (2人天)**
+- **任务目标**：部署和配置 Bootstrap Pipeline 基础设施
+- **任务 3.2**：部署 Bootstrap Pipeline 到测试集群
+- **任务 3.3**：配置 EventListener 指向 Bootstrap Pipeline
 
-**监控和日志 (1人天)**
-- **任务目标**：建立完整的可观测性体系，支持生产运维
-- **任务 3.4**：添加监控指标和结构化日志
+**端到端测试 (1人天)**
+- **任务目标**：验证从代码变更到用户 Pipeline 执行的完整流程
+- **任务 3.4**：实现完整的端到端测试流程
 
-#### 第 4 周：文档和优化
+#### 第 4 周：基础设施完善和生产部署
 
-**API 接口开发 (2人天)**
-- **任务目标**：提供用户友好的 Tekton 管理和监控 API
-- **任务 4.1**：开发 Tekton 相关 API 端点
+**Bootstrap Pipeline 生产化 (2人天)**
+- **任务目标**：完善 Bootstrap Pipeline 基础设施，准备生产部署
+- **任务 4.1**：生产级 Bootstrap Pipeline 优化
+  ```yaml
+  # 生产级配置示例
+  apiVersion: tekton.dev/v1beta1
+  kind: Pipeline
+  metadata:
+    name: reposentry-bootstrap-pipeline
+    namespace: reposentry-system
+  spec:
+    params:
+    - name: repo-url
+    - name: repo-branch  
+    - name: commit-sha
+    - name: target-namespace
+    tasks:
+    - name: clone-user-repo
+    - name: scan-tekton-directory
+    - name: create-isolated-namespace
+    - name: apply-user-resources
+    - name: trigger-user-pipeline
+  ```
 
-**性能优化 (2人天)**
-- **任务目标**：确保系统能够高效处理大规模仓库监控
-- **任务 4.2**：优化检测性能和资源使用
+**部署脚本和文档 (2人天)**
+- **任务目标**：创建一键部署脚本和运维文档
+- **任务 4.2**：开发部署和运维工具
+  ```bash
+  # 新增文件：scripts/install-bootstrap-pipeline.sh
+  # 新增文件：docs/zh/bootstrap-pipeline-deployment.md
+  # 新增文件：docs/zh/bootstrap-pipeline-troubleshooting.md
+  ```
 
-**文档和部署 (1人天)**
-- **任务目标**：完善用户文档和部署指南，确保用户能够顺利使用
-- **任务 4.3**：编写用户文档和部署指南
+**监控和可观测性 (1人天)**
+- **任务目标**：建立 Bootstrap Pipeline 执行监控
+- **任务 4.3**：添加基础监控指标
+
+**长远计划（暂不实施）：**
+```
+# 高级 API 功能（长远计划）
+POST /api/v1/tekton/repositories/{repo}/configure
+GET /api/v1/tekton/discovery/recommendations
+GET /api/v1/tekton/governance/policies
+
+# 高级性能优化（长远计划）  
+- 智能缓存策略
+- 批量检测优化
+- 资源使用分析
+```
 
 ### 🎯 第一阶段交付成果（生产就绪）
 
 ```
-核心功能：
-✅ 完整 Tekton 资源检测（.tekton/ 目录及所有子目录）
-✅ Bootstrap Pipeline 自动触发和执行
+核心功能（当前实施）：
+✅ 基础 Tekton 资源检测（.tekton/ 目录及子目录）
+✅ 预部署的 Bootstrap Pipeline 基础设施
+✅ 简化的触发机制（无循环依赖）
 ✅ 用户命名空间隔离和基础资源配额
 ✅ 安全的哈希命名空间策略
-✅ 监控和日志记录
-✅ REST API 接口
-✅ 支持任意 .tekton/ 子目录结构
+✅ 基础监控和日志记录
+✅ 一键部署脚本和运维文档
 
-生产能力：
+基础设施能力（当前实施）：
+✅ 系统级 Bootstrap Pipeline 预部署
+✅ 参数化运行时配置
 ✅ 支持 GitHub 和 GitLab 双平台
-✅ 并发处理多个仓库
-✅ 容错和重试机制
+✅ 基础并发处理
+✅ 基础容错机制
 ✅ 基础安全策略（PodSecurityPolicy）
-✅ 性能优化和缓存
+
+长远计划功能（暂不实施）：
+📋 高级性能优化和智能缓存
+📋 高级 API 管理功能
+📋 智能子目录组织建议
+📋 高级监控和告警
+📋 批量仓库处理优化
 ```
 
 
@@ -178,101 +300,25 @@
 实现企业级治理功能，确保 Tekton 资源的安全性、合规性和资源使用的可控性。
 **状态：📋 暂缓实施，等待第一阶段成功部署后再考虑**
 
-### 🗓️ 详细开发计划（暂缓）
+### 🗓️ 概要规划（未来参考）
 
-> ⚠️ **注意**：以下计划仅作为未来参考，当前不会实施
+> ⚠️ **注意**：以下仅为概要规划，等第一阶段完成后再详细设计
 
-#### 未来第 5 周：安全策略和资源管理
-
-**安全策略引擎 (3人天)**
-- **任务目标**：构建用户 YAML 安全检查和策略执行引擎
-- **任务 5.1**：安全策略引擎开发
-  ```go
-  // internal/governance/security.go
-  type SecurityPolicy struct {
-      ForbiddenConfigs []SecurityRule `yaml:"forbidden_configs"`
-      RequiredConfigs  []SecurityRule `yaml:"required_configs"`
-      WarningConfigs   []SecurityRule `yaml:"warning_configs"`
-  }
-  
-  type SecurityRule struct {
-      Name        string `yaml:"name"`
-      Description string `yaml:"description"`
-      Pattern     string `yaml:"pattern"`     // YAML 路径模式
-      Action      string `yaml:"action"`     // block, warn, audit
-  }
-  ```
-
-**资源配额管理 (2人天)**
-- **任务目标**：实现多层级资源配额控制和监控
-- **任务 5.2**：资源配额管理系统
-  ```go
-  // internal/governance/quota.go
-  type ResourceQuotaPolicy struct {
-      GlobalLimits      ResourceLimits            `yaml:"global_limits"`
-      OrganizationLimits map[string]ResourceLimits `yaml:"organization_limits"`
-      RepositoryLimits  map[string]ResourceLimits `yaml:"repository_limits"`
-  }
-  ```
-
-#### 未来第 6 周：监控告警和合规检查
-
-**监控告警系统 (2人天)**
-- **任务目标**：建立企业级监控指标和告警机制
-- **任务 6.1**：监控告警系统开发
-
-**合规检查引擎 (2人天)**
-- **任务目标**：实现自动化合规检查和审计功能
-- **任务 6.2**：合规性检查系统
-
-**策略模板库 (1人天)**
-- **任务目标**：建立标准化策略模板和最佳实践库
-- **任务 6.3**：策略模板和预设配置
-
-#### 未来第 7 周：集成测试和文档
-
-**企业功能集成测试 (3人天)**
-- **任务目标**：验证企业治理功能的完整性和可靠性
-- **任务 7.1**：端到端测试和验证
-
-**文档和部署指南 (2人天)**
-- **任务目标**：完善企业功能文档和部署指南
-- **任务 7.2**：企业功能文档编写
+#### 主要功能模块
+- **安全策略管理**：YAML安全检查、策略执行引擎
+- **资源配额控制**：多层级配额管理、监控告警
+- **合规性检查**：自动化审计、合规报告
+- **策略模板库**：标准化配置模板和最佳实践
 
 ### 🎯 第二阶段交付成果（未来规划）
 
 ```
 企业治理功能（暂缓实施）：
-📋 安全策略管理（禁止特权容器、硬编码密码等）
-📋 资源配额控制（CPU、内存、并发执行限制）
-📋 合规性检查和审计（SOC2、PCI DSS 等标准）
-📋 监控告警系统（资源使用、安全违规等）
-📋 策略模板库（初创公司、大企业、金融等模板）
-
-配置示例：
-# 安全策略
-security_policies:
-  forbidden_configs:
-    - name: "privileged_containers"
-      pattern: "**.securityContext.privileged"
-      action: "block"
-    - name: "hardcoded_secrets"
-      pattern: "**.env[?(@.name =~ /.*PASSWORD.*|.*SECRET.*/)]"
-      action: "block"
-
-# 资源配额
-resource_quotas:
-  global_limits:
-    max_cpu_request: "2"
-    max_memory_request: "4Gi"
-    max_pipelines: 10
-    max_parallel_runs: 3
-    max_execution_time: "2h"
-    
-  organization_limits:
-    "mobile-team":
-      max_cpu_request: "4"
-      max_pipelines: 20
+📋 安全策略管理
+📋 资源配额控制
+📋 合规性检查和审计
+📋 监控告警系统
+📋 策略模板库
 ```
 
 ## 📊 当前技术架构（第一阶段）
@@ -328,19 +374,16 @@ sequenceDiagram
 ### 核心配置结构
 
 ```yaml
-# 第一阶段 RepoSentry Tekton 集成配置
+# 第一阶段 RepoSentry Tekton 集成配置（核心功能）
 tekton_integration:
   # 基础开关
   enabled: true
   
   # 检测配置（固定 .tekton/ 路径）
   detection:
-    scan_depth: 5                    # .tekton/ 子目录最大扫描深度
+    scan_depth: 3                    # .tekton/ 子目录最大扫描深度（基础）
     file_filters:
       extensions: [".yaml", ".yml"]
-      exclude_patterns: ["*.template.*", "*/test/*", "*/examples/*"]
-      max_file_size: "1MB"
-    cache_ttl: "1h"                  # 检测结果缓存时间
   
   # Bootstrap 配置
   bootstrap:
@@ -351,15 +394,20 @@ tekton_integration:
     # 基础安全配置
     security:
       use_hash_namespace: true       # 使用哈希命名空间
-      enable_pod_security: true     # 启用 PodSecurityPolicy
       
     # 基础资源配额
     resource_quota:
-      max_cpu: "2"
-      max_memory: "4Gi"
-      max_pods: "10"
+      max_cpu: "1"                   # 基础限制
+      max_memory: "2Gi"              # 基础限制
+      max_pods: "5"                  # 基础限制
 
-# 企业治理配置（长远计划 - 暂不实施）
+# 长远计划配置（暂不实施）：
+# detection:
+#   exclude_patterns: ["*.template.*", "*/test/*", "*/examples/*"]  # 智能过滤
+#   max_file_size: "1MB"            # 文件大小限制
+#   cache_ttl: "1h"                 # 智能缓存
+# security:
+#   enable_pod_security: true       # 高级安全策略
 # governance:
 #   security: # 详细安全策略...
 #   compliance: # 合规检查...
@@ -371,7 +419,7 @@ tekton_integration:
 ### 基础监控指标
 
 ```go
-// 第一阶段 Prometheus 指标
+// 第一阶段基础 Prometheus 指标（核心功能）
 var (
     // 核心功能指标
     tektonDetectionsTotal = prometheus.NewCounterVec(
@@ -379,7 +427,7 @@ var (
             Name: "reposentry_tekton_detections_total",
             Help: "Total Tekton detections in .tekton/ directory",
         },
-        []string{"repository", "status", "organization"},
+        []string{"repository", "status"},  // 简化标签
     )
     
     tektonExecutionsTotal = prometheus.NewCounterVec(
@@ -387,7 +435,7 @@ var (
             Name: "reposentry_tekton_executions_total", 
             Help: "Total Tekton pipeline executions",
         },
-        []string{"repository", "status", "organization"},
+        []string{"repository", "status"},  // 简化标签
     )
     
     bootstrapPipelineStatus = prometheus.NewGaugeVec(
@@ -395,29 +443,16 @@ var (
             Name: "reposentry_bootstrap_pipeline_status",
             Help: "Bootstrap pipeline execution status",
         },
-        []string{"repository", "namespace", "status"},
-    )
-    
-    userNamespaceCount = prometheus.NewGaugeVec(
-        prometheus.GaugeOpts{
-            Name: "reposentry_user_namespaces_total",
-            Help: "Total user namespaces created",
-        },
-        []string{"organization"},
-    )
-    
-    // 基础资源使用指标
-    basicResourceUsage = prometheus.NewGaugeVec(
-        prometheus.GaugeOpts{
-            Name: "reposentry_basic_resource_usage",
-            Help: "Basic resource usage tracking",
-        },
-        []string{"namespace", "resource_type"},  // cpu, memory, pods
+        []string{"repository", "status"},  // 简化标签
     )
 )
 
-// 企业治理指标（长远计划 - 暂不实施）
-// securityViolationsTotal, complianceScore 等在未来实施
+// 长远计划指标（暂不实施）：
+// userNamespaceCount - 命名空间统计
+// basicResourceUsage - 资源使用跟踪  
+// securityViolationsTotal - 安全违规统计
+// complianceScore - 合规性评分
+// performanceMetrics - 性能指标
 ```
 
 ## 🧪 当前测试策略（第一阶段）

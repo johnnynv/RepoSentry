@@ -1,0 +1,3197 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>tekton: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/johnnynv/RepoSentry/internal/tekton/bootstrap_pipeline.go (81.4%)</option>
+				
+				<option value="file1">github.com/johnnynv/RepoSentry/internal/tekton/bootstrap_resources.go (78.7%)</option>
+				
+				<option value="file2">github.com/johnnynv/RepoSentry/internal/tekton/bootstrap_tasks.go (77.3%)</option>
+				
+				<option value="file3">github.com/johnnynv/RepoSentry/internal/tekton/detector.go (72.7%)</option>
+				
+				<option value="file4">github.com/johnnynv/RepoSentry/internal/tekton/event_generator.go (97.1%)</option>
+				
+				<option value="file5">github.com/johnnynv/RepoSentry/internal/tekton/integration_manager.go (92.2%)</option>
+				
+				<option value="file6">github.com/johnnynv/RepoSentry/internal/tekton/kubernetes_applier.go (67.6%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package tekton
+
+import (
+        "fmt"
+        "strings"
+        "text/template"
+
+        "github.com/johnnynv/RepoSentry/pkg/logger"
+        "github.com/johnnynv/RepoSentry/pkg/types"
+)
+
+// BootstrapPipelineGenerator generates Bootstrap Pipeline YAML based on detection results
+type BootstrapPipelineGenerator struct {
+        logger *logger.Entry
+}
+
+// NewBootstrapPipelineGenerator creates a new Bootstrap Pipeline generator
+func NewBootstrapPipelineGenerator(parentLogger *logger.Entry) *BootstrapPipelineGenerator <span class="cov8" title="1">{
+        generatorLogger := parentLogger.WithFields(logger.Fields{
+                "component": "bootstrap-pipeline-generator",
+        })
+
+        return &amp;BootstrapPipelineGenerator{
+                logger: generatorLogger,
+        }
+}</span>
+
+// BootstrapPipelineConfig contains configuration for generating Bootstrap Pipeline
+type BootstrapPipelineConfig struct {
+        // Repository information
+        Repository types.Repository
+        CommitSHA  string
+        Branch     string
+
+        // Detection results
+        Detection *TektonDetection
+
+        // Namespace for execution
+        Namespace string
+
+        // Bootstrap configuration
+        CloneImage     string
+        KubectlImage   string
+        TektonImage    string
+        WorkspaceSize  string
+        ServiceAccount string
+
+        // Security and resource limits
+        ResourceLimits  map[string]string
+        SecurityContext map[string]interface{}
+        NetworkPolicy   string
+}
+
+// BootstrapPipelineResources contains all generated Tekton resources
+type BootstrapPipelineResources struct {
+        // Core bootstrap resources
+        BootstrapPipeline string
+        BootstrapTasks    []string
+
+        // Supporting resources
+        ServiceAccount string
+        RoleBinding    string
+        NetworkPolicy  string
+        ResourceQuota  string
+
+        // Execution resources
+        PipelineRun string
+
+        // Generated metadata
+        GeneratedAt string
+        Namespace   string
+        Config      *BootstrapPipelineConfig
+}
+
+// GenerateBootstrapResources generates all necessary Bootstrap Pipeline resources
+func (bpg *BootstrapPipelineGenerator) GenerateBootstrapResources(config *BootstrapPipelineConfig) (*BootstrapPipelineResources, error) <span class="cov8" title="1">{
+        bpg.logger.WithFields(logger.Fields{
+                "operation":        "generate_bootstrap_resources",
+                "repository":       config.Repository.Name,
+                "estimated_action": config.Detection.EstimatedAction,
+                "namespace":        config.Namespace,
+        }).Info("Generating Bootstrap Pipeline resources")
+
+        // Set defaults if not provided
+        if err := bpg.setDefaults(config); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to set defaults: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">resources := &amp;BootstrapPipelineResources{
+                Namespace:      config.Namespace,
+                Config:         config,
+                GeneratedAt:    "2025-08-26T08:00:00Z", // TODO: Use actual timestamp
+                BootstrapTasks: []string{},
+        }
+
+        // Generate based on estimated action
+        switch config.Detection.EstimatedAction </span>{
+        case "apply":<span class="cov8" title="1">
+                return bpg.generateApplyResources(config, resources)</span>
+        case "trigger":<span class="cov8" title="1">
+                return bpg.generateTriggerResources(config, resources)</span>
+        case "validate":<span class="cov8" title="1">
+                return bpg.generateValidateResources(config, resources)</span>
+        case "skip":<span class="cov8" title="1">
+                return bpg.generateSkipResources(config, resources)</span>
+        default:<span class="cov8" title="1">
+                return nil, fmt.Errorf("unsupported estimated action: %s", config.Detection.EstimatedAction)</span>
+        }
+}
+
+// setDefaults sets default values for configuration
+func (bpg *BootstrapPipelineGenerator) setDefaults(config *BootstrapPipelineConfig) error <span class="cov8" title="1">{
+        if config.CloneImage == "" </span><span class="cov8" title="1">{
+                config.CloneImage = "gcr.io/tekton-releases/github.com/tektoncd/pipeline/cmd/git-init:v0.40.2"
+        }</span>
+        <span class="cov8" title="1">if config.KubectlImage == "" </span><span class="cov8" title="1">{
+                config.KubectlImage = "bitnami/kubectl:1.28"
+        }</span>
+        <span class="cov8" title="1">if config.TektonImage == "" </span><span class="cov8" title="1">{
+                config.TektonImage = "gcr.io/tekton-releases/github.com/tektoncd/pipeline/cmd/controller:v0.40.2"
+        }</span>
+        <span class="cov8" title="1">if config.WorkspaceSize == "" </span><span class="cov8" title="1">{
+                config.WorkspaceSize = "1Gi"
+        }</span>
+        <span class="cov8" title="1">if config.ServiceAccount == "" </span><span class="cov8" title="1">{
+                config.ServiceAccount = "reposentry-bootstrap-sa"
+        }</span>
+        <span class="cov8" title="1">if config.ResourceLimits == nil </span><span class="cov8" title="1">{
+                config.ResourceLimits = map[string]string{
+                        "cpu":    "500m",
+                        "memory": "512Mi",
+                }
+        }</span>
+        <span class="cov8" title="1">if config.SecurityContext == nil </span><span class="cov8" title="1">{
+                config.SecurityContext = map[string]interface{}{
+                        "runAsNonRoot": true,
+                        "runAsUser":    65532,
+                        "fsGroup":      65532,
+                }
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// generateApplyResources generates resources for "apply" action
+func (bpg *BootstrapPipelineGenerator) generateApplyResources(config *BootstrapPipelineConfig, resources *BootstrapPipelineResources) (*BootstrapPipelineResources, error) <span class="cov8" title="1">{
+        bpg.logger.Info("Generating apply-mode Bootstrap Pipeline")
+
+        // Generate bootstrap pipeline for applying user resources
+        pipelineTemplate := `
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: reposentry-bootstrap-apply
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap"
+    reposentry.io/action: "apply"
+    reposentry.io/repository: "{{.Repository.Name}}"
+spec:
+  description: "Bootstrap Pipeline to clone repository, validate and apply Tekton resources"
+  params:
+  - name: repo-url
+    type: string
+    description: "Repository URL to clone"
+  - name: commit-sha
+    type: string
+    description: "Commit SHA to checkout"
+  - name: branch
+    type: string
+    description: "Branch name"
+    default: "main"
+  - name: tekton-path
+    type: string
+    description: "Path to Tekton resources"
+    default: "{{.Detection.ScanPath}}"
+  workspaces:
+  - name: source
+    description: "Workspace for source code"
+  - name: tekton-resources
+    description: "Workspace for processed Tekton resources"
+  tasks:
+  - name: clone-repository
+    taskRef:
+      name: reposentry-bootstrap-clone
+    params:
+    - name: url
+      value: $(params.repo-url)
+    - name: revision
+      value: $(params.commit-sha)
+    workspaces:
+    - name: output
+      workspace: source
+  - name: validate-tekton-resources
+    taskRef:
+      name: reposentry-bootstrap-validate
+    runAfter:
+    - clone-repository
+    params:
+    - name: tekton-path
+      value: $(params.tekton-path)
+    workspaces:
+    - name: source
+      workspace: source
+    - name: output
+      workspace: tekton-resources
+  - name: apply-tekton-resources
+    taskRef:
+      name: reposentry-bootstrap-apply-resources
+    runAfter:
+    - validate-tekton-resources
+    params:
+    - name: namespace
+      value: "{{.Namespace}}"
+    workspaces:
+    - name: resources
+      workspace: tekton-resources
+`
+
+        tmpl, err := template.New("bootstrap-pipeline").Parse(pipelineTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to parse pipeline template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var pipelineBuffer strings.Builder
+        if err := tmpl.Execute(&amp;pipelineBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to execute pipeline template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">resources.BootstrapPipeline = pipelineBuffer.String()
+
+        // Generate supporting tasks
+        tasks, err := bpg.generateApplyTasks(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate apply tasks: %w", err)
+        }</span>
+        <span class="cov8" title="1">resources.BootstrapTasks = tasks
+
+        // Generate supporting resources
+        if err := bpg.generateSupportingResources(config, resources); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate supporting resources: %w", err)
+        }</span>
+
+        // Generate PipelineRun
+        <span class="cov8" title="1">pipelineRun, err := bpg.generateApplyPipelineRun(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate PipelineRun: %w", err)
+        }</span>
+        <span class="cov8" title="1">resources.PipelineRun = pipelineRun
+
+        return resources, nil</span>
+}
+
+// generateTriggerResources generates resources for "trigger" action
+func (bpg *BootstrapPipelineGenerator) generateTriggerResources(config *BootstrapPipelineConfig, resources *BootstrapPipelineResources) (*BootstrapPipelineResources, error) <span class="cov8" title="1">{
+        bpg.logger.Info("Generating trigger-mode Bootstrap Pipeline")
+
+        // For trigger mode, we apply resources first, then trigger them
+        pipelineTemplate := `
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: reposentry-bootstrap-trigger
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap"
+    reposentry.io/action: "trigger"
+    reposentry.io/repository: "{{.Repository.Name}}"
+spec:
+  description: "Bootstrap Pipeline to apply and trigger user Tekton resources"
+  params:
+  - name: repo-url
+    type: string
+  - name: commit-sha
+    type: string
+  - name: branch
+    type: string
+    default: "main"
+  - name: tekton-path
+    type: string
+    default: "{{.Detection.ScanPath}}"
+  workspaces:
+  - name: source
+  - name: tekton-resources
+  tasks:
+  - name: clone-repository
+    taskRef:
+      name: reposentry-bootstrap-clone
+    params:
+    - name: url
+      value: $(params.repo-url)
+    - name: revision
+      value: $(params.commit-sha)
+    workspaces:
+    - name: output
+      workspace: source
+  - name: validate-tekton-resources
+    taskRef:
+      name: reposentry-bootstrap-validate
+    runAfter:
+    - clone-repository
+    params:
+    - name: tekton-path
+      value: $(params.tekton-path)
+    workspaces:
+    - name: source
+      workspace: source
+    - name: output
+      workspace: tekton-resources
+  - name: apply-definitions
+    taskRef:
+      name: reposentry-bootstrap-apply-resources
+    runAfter:
+    - validate-tekton-resources
+    params:
+    - name: namespace
+      value: "{{.Namespace}}"
+    - name: resource-filter
+      value: "Pipeline,Task"
+    workspaces:
+    - name: resources
+      workspace: tekton-resources
+  - name: trigger-runs
+    taskRef:
+      name: reposentry-bootstrap-trigger-runs
+    runAfter:
+    - apply-definitions
+    params:
+    - name: namespace
+      value: "{{.Namespace}}"
+    workspaces:
+    - name: resources
+      workspace: tekton-resources
+`
+
+        tmpl, err := template.New("bootstrap-trigger").Parse(pipelineTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to parse trigger template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var pipelineBuffer strings.Builder
+        if err := tmpl.Execute(&amp;pipelineBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to execute trigger template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">resources.BootstrapPipeline = pipelineBuffer.String()
+
+        // Generate trigger-specific tasks
+        tasks, err := bpg.generateTriggerTasks(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate trigger tasks: %w", err)
+        }</span>
+        <span class="cov8" title="1">resources.BootstrapTasks = tasks
+
+        // Generate supporting resources
+        if err := bpg.generateSupportingResources(config, resources); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate supporting resources: %w", err)
+        }</span>
+
+        // Generate PipelineRun
+        <span class="cov8" title="1">pipelineRun, err := bpg.generateTriggerPipelineRun(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate PipelineRun: %w", err)
+        }</span>
+        <span class="cov8" title="1">resources.PipelineRun = pipelineRun
+
+        return resources, nil</span>
+}
+
+// generateValidateResources generates resources for "validate" action
+func (bpg *BootstrapPipelineGenerator) generateValidateResources(config *BootstrapPipelineConfig, resources *BootstrapPipelineResources) (*BootstrapPipelineResources, error) <span class="cov8" title="1">{
+        bpg.logger.Info("Generating validate-mode Bootstrap Pipeline")
+
+        // For validate mode, we only clone and validate, no apply
+        pipelineTemplate := `
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: reposentry-bootstrap-validate
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap"
+    reposentry.io/action: "validate"
+    reposentry.io/repository: "{{.Repository.Name}}"
+spec:
+  description: "Bootstrap Pipeline to validate Tekton resources only"
+  params:
+  - name: repo-url
+    type: string
+  - name: commit-sha
+    type: string
+  - name: tekton-path
+    type: string
+    default: "{{.Detection.ScanPath}}"
+  workspaces:
+  - name: source
+  tasks:
+  - name: clone-repository
+    taskRef:
+      name: reposentry-bootstrap-clone
+    params:
+    - name: url
+      value: $(params.repo-url)
+    - name: revision
+      value: $(params.commit-sha)
+    workspaces:
+    - name: output
+      workspace: source
+  - name: validate-only
+    taskRef:
+      name: reposentry-bootstrap-validate-only
+    runAfter:
+    - clone-repository
+    params:
+    - name: tekton-path
+      value: $(params.tekton-path)
+    workspaces:
+    - name: source
+      workspace: source
+`
+
+        tmpl, err := template.New("bootstrap-validate").Parse(pipelineTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to parse validate template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var pipelineBuffer strings.Builder
+        if err := tmpl.Execute(&amp;pipelineBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to execute validate template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">resources.BootstrapPipeline = pipelineBuffer.String()
+
+        // Generate validate-specific tasks
+        tasks, err := bpg.generateValidateTasks(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate validate tasks: %w", err)
+        }</span>
+        <span class="cov8" title="1">resources.BootstrapTasks = tasks
+
+        // Generate supporting resources (minimal for validation)
+        if err := bpg.generateSupportingResources(config, resources); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate supporting resources: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return resources, nil</span>
+}
+
+// generateSkipResources generates minimal resources for "skip" action
+func (bpg *BootstrapPipelineGenerator) generateSkipResources(config *BootstrapPipelineConfig, resources *BootstrapPipelineResources) (*BootstrapPipelineResources, error) <span class="cov8" title="1">{
+        bpg.logger.Info("Generating skip-mode resources (minimal)")
+
+        // For skip mode, we just generate a simple notification task
+        pipelineTemplate := `
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: reposentry-bootstrap-skip
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap"
+    reposentry.io/action: "skip"
+    reposentry.io/repository: "{{.Repository.Name}}"
+spec:
+  description: "Bootstrap Pipeline for repositories without Tekton resources"
+  tasks:
+  - name: notify-skip
+    taskRef:
+      name: reposentry-bootstrap-notify
+    params:
+    - name: message
+      value: "No Tekton resources found in repository {{.Repository.Name}}"
+    - name: status
+      value: "skipped"
+`
+
+        tmpl, err := template.New("bootstrap-skip").Parse(pipelineTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to parse skip template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var pipelineBuffer strings.Builder
+        if err := tmpl.Execute(&amp;pipelineBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to execute skip template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">resources.BootstrapPipeline = pipelineBuffer.String()
+
+        // Generate minimal tasks
+        tasks, err := bpg.generateSkipTasks(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate skip tasks: %w", err)
+        }</span>
+        <span class="cov8" title="1">resources.BootstrapTasks = tasks
+
+        return resources, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package tekton
+
+import (
+        "crypto/sha256"
+        "fmt"
+        "strings"
+        "text/template"
+
+        "github.com/johnnynv/RepoSentry/pkg/types"
+)
+
+// generateSupportingResources generates ServiceAccount, RBAC, ResourceQuota, etc.
+func (bpg *BootstrapPipelineGenerator) generateSupportingResources(config *BootstrapPipelineConfig, resources *BootstrapPipelineResources) error <span class="cov8" title="1">{
+        // Generate ServiceAccount
+        serviceAccount, err := bpg.generateServiceAccount(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to generate ServiceAccount: %w", err)
+        }</span>
+        <span class="cov8" title="1">resources.ServiceAccount = serviceAccount
+
+        // Generate RoleBinding
+        roleBinding, err := bpg.generateRoleBinding(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to generate RoleBinding: %w", err)
+        }</span>
+        <span class="cov8" title="1">resources.RoleBinding = roleBinding
+
+        // Generate ResourceQuota
+        resourceQuota, err := bpg.generateResourceQuota(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to generate ResourceQuota: %w", err)
+        }</span>
+        <span class="cov8" title="1">resources.ResourceQuota = resourceQuota
+
+        // Generate NetworkPolicy
+        networkPolicy, err := bpg.generateNetworkPolicy(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to generate NetworkPolicy: %w", err)
+        }</span>
+        <span class="cov8" title="1">resources.NetworkPolicy = networkPolicy
+
+        return nil</span>
+}
+
+// generateServiceAccount generates ServiceAccount for Bootstrap Pipeline
+func (bpg *BootstrapPipelineGenerator) generateServiceAccount(config *BootstrapPipelineConfig) (string, error) <span class="cov8" title="1">{
+        saTemplate := `
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{.ServiceAccount}}
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap"
+    reposentry.io/repository: "{{.Repository.Name}}"
+  annotations:
+    reposentry.io/repository-url: "{{.Repository.URL}}"
+    reposentry.io/commit-sha: "{{.CommitSHA}}"
+    reposentry.io/branch: "{{.Branch}}"
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{.ServiceAccount}}-token
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap"
+  annotations:
+    kubernetes.io/service-account.name: {{.ServiceAccount}}
+type: kubernetes.io/service-account-token
+`
+
+        tmpl, err := template.New("service-account").Parse(saTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse ServiceAccount template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var saBuffer strings.Builder
+        if err := tmpl.Execute(&amp;saBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to execute ServiceAccount template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return saBuffer.String(), nil</span>
+}
+
+// generateRoleBinding generates RBAC for Bootstrap Pipeline
+func (bpg *BootstrapPipelineGenerator) generateRoleBinding(config *BootstrapPipelineConfig) (string, error) <span class="cov8" title="1">{
+        rbacTemplate := `
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reposentry-bootstrap-role
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap"
+rules:
+# Tekton resources
+- apiGroups: ["tekton.dev"]
+  resources: ["tasks", "pipelines", "pipelineruns", "taskruns"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["tekton.dev"]
+  resources: ["clustertasks"]
+  verbs: ["get", "list"]
+# Core resources needed for pipeline execution
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "configmaps", "secrets", "persistentvolumeclaims"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "update", "patch"]
+# Triggers resources (if using Tekton Triggers)
+- apiGroups: ["triggers.tekton.dev"]
+  resources: ["eventlisteners", "triggerbindings", "triggertemplates", "triggers"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reposentry-bootstrap-binding
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap"
+subjects:
+- kind: ServiceAccount
+  name: {{.ServiceAccount}}
+  namespace: {{.Namespace}}
+roleRef:
+  kind: Role
+  name: reposentry-bootstrap-role
+  apiGroup: rbac.authorization.k8s.io
+`
+
+        tmpl, err := template.New("role-binding").Parse(rbacTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse RBAC template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var rbacBuffer strings.Builder
+        if err := tmpl.Execute(&amp;rbacBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to execute RBAC template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return rbacBuffer.String(), nil</span>
+}
+
+// generateResourceQuota generates ResourceQuota for namespace isolation
+func (bpg *BootstrapPipelineGenerator) generateResourceQuota(config *BootstrapPipelineConfig) (string, error) <span class="cov8" title="1">{
+        quotaTemplate := `
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: reposentry-bootstrap-quota
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap"
+    reposentry.io/repository: "{{.Repository.Name}}"
+spec:
+  hard:
+    # Compute resources
+    requests.cpu: "2"
+    requests.memory: "4Gi"
+    limits.cpu: "4"
+    limits.memory: "8Gi"
+    
+    # Storage resources
+    requests.storage: "10Gi"
+    persistentvolumeclaims: "10"
+    
+    # Object counts
+    pods: "20"
+    secrets: "20"
+    configmaps: "20"
+    services: "5"
+    
+    # Tekton resources
+    count/pipelineruns.tekton.dev: "10"
+    count/taskruns.tekton.dev: "50"
+    count/pipelines.tekton.dev: "10"
+    count/tasks.tekton.dev: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: reposentry-bootstrap-limits
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap"
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: "500m"
+      memory: "512Mi"
+    defaultRequest:
+      cpu: "100m"
+      memory: "128Mi"
+    max:
+      cpu: "2"
+      memory: "2Gi"
+    min:
+      cpu: "50m"
+      memory: "64Mi"
+  - type: Pod
+    max:
+      cpu: "4"
+      memory: "4Gi"
+  - type: PersistentVolumeClaim
+    max:
+      storage: "5Gi"
+    min:
+      storage: "1Gi"
+`
+
+        tmpl, err := template.New("resource-quota").Parse(quotaTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse ResourceQuota template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var quotaBuffer strings.Builder
+        if err := tmpl.Execute(&amp;quotaBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to execute ResourceQuota template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return quotaBuffer.String(), nil</span>
+}
+
+// generateNetworkPolicy generates NetworkPolicy for network isolation
+func (bpg *BootstrapPipelineGenerator) generateNetworkPolicy(config *BootstrapPipelineConfig) (string, error) <span class="cov8" title="1">{
+        npTemplate := `
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: reposentry-bootstrap-netpol
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap"
+spec:
+  podSelector:
+    matchLabels:
+      reposentry.io/managed: "true"
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow ingress from same namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: {{.Namespace}}
+  # Allow ingress from Tekton system
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: tekton-pipelines
+  egress:
+  # Allow egress to same namespace
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: {{.Namespace}}
+  # Allow egress to Tekton system
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: tekton-pipelines
+  # Allow egress to kube-system (for DNS)
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow egress to external Git repositories (HTTPS)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow egress to external Git repositories (SSH)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 22
+`
+
+        tmpl, err := template.New("network-policy").Parse(npTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse NetworkPolicy template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var npBuffer strings.Builder
+        if err := tmpl.Execute(&amp;npBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to execute NetworkPolicy template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return npBuffer.String(), nil</span>
+}
+
+// generateApplyPipelineRun generates PipelineRun for apply mode
+func (bpg *BootstrapPipelineGenerator) generateApplyPipelineRun(config *BootstrapPipelineConfig) (string, error) <span class="cov8" title="1">{
+        prTemplate := `
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: reposentry-bootstrap-apply-{{.RunID}}
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap-run"
+    reposentry.io/action: "apply"
+    reposentry.io/repository: "{{.Repository.Name}}"
+  annotations:
+    reposentry.io/repository-url: "{{.Repository.URL}}"
+    reposentry.io/commit-sha: "{{.CommitSHA}}"
+    reposentry.io/branch: "{{.Branch}}"
+    reposentry.io/scan-path: "{{.Detection.ScanPath}}"
+spec:
+  pipelineRef:
+    name: reposentry-bootstrap-apply
+  serviceAccountName: {{.ServiceAccount}}
+  params:
+  - name: repo-url
+    value: "{{.Repository.URL}}"
+  - name: commit-sha
+    value: "{{.CommitSHA}}"
+  - name: branch
+    value: "{{.Branch}}"
+  - name: tekton-path
+    value: "{{.Detection.ScanPath}}"
+  workspaces:
+  - name: source
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{.WorkspaceSize}}
+        storageClassName: standard
+  - name: tekton-resources
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{.WorkspaceSize}}
+        storageClassName: standard
+  timeouts:
+    pipeline: "30m"
+    tasks: "20m"
+    finally: "5m"
+`
+
+        // Generate unique run ID
+        runID := bpg.generateRunID(config)
+        
+        // Create template data with RunID
+        templateData := struct {
+                *BootstrapPipelineConfig
+                RunID string
+        }{
+                BootstrapPipelineConfig: config,
+                RunID:                   runID,
+        }
+
+        tmpl, err := template.New("apply-pipelinerun").Parse(prTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse apply PipelineRun template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var prBuffer strings.Builder
+        if err := tmpl.Execute(&amp;prBuffer, templateData); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to execute apply PipelineRun template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return prBuffer.String(), nil</span>
+}
+
+// generateTriggerPipelineRun generates PipelineRun for trigger mode
+func (bpg *BootstrapPipelineGenerator) generateTriggerPipelineRun(config *BootstrapPipelineConfig) (string, error) <span class="cov8" title="1">{
+        prTemplate := `
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: reposentry-bootstrap-trigger-{{.RunID}}
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap-run"
+    reposentry.io/action: "trigger"
+    reposentry.io/repository: "{{.Repository.Name}}"
+  annotations:
+    reposentry.io/repository-url: "{{.Repository.URL}}"
+    reposentry.io/commit-sha: "{{.CommitSHA}}"
+    reposentry.io/branch: "{{.Branch}}"
+spec:
+  pipelineRef:
+    name: reposentry-bootstrap-trigger
+  serviceAccountName: {{.ServiceAccount}}
+  params:
+  - name: repo-url
+    value: "{{.Repository.URL}}"
+  - name: commit-sha
+    value: "{{.CommitSHA}}"
+  - name: branch
+    value: "{{.Branch}}"
+  - name: tekton-path
+    value: "{{.Detection.ScanPath}}"
+  workspaces:
+  - name: source
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{.WorkspaceSize}}
+  - name: tekton-resources
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{.WorkspaceSize}}
+  timeouts:
+    pipeline: "1h"
+    tasks: "45m"
+    finally: "10m"
+`
+
+        runID := bpg.generateRunID(config)
+        templateData := struct {
+                *BootstrapPipelineConfig
+                RunID string
+        }{
+                BootstrapPipelineConfig: config,
+                RunID:                   runID,
+        }
+
+        tmpl, err := template.New("trigger-pipelinerun").Parse(prTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse trigger PipelineRun template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var prBuffer strings.Builder
+        if err := tmpl.Execute(&amp;prBuffer, templateData); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to execute trigger PipelineRun template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return prBuffer.String(), nil</span>
+}
+
+// generateRunID generates a unique ID for PipelineRun
+func (bpg *BootstrapPipelineGenerator) generateRunID(config *BootstrapPipelineConfig) string <span class="cov8" title="1">{
+        // Create unique ID based on repository, commit, and timestamp
+        data := fmt.Sprintf("%s:%s:%s:%s", 
+                config.Repository.Name, 
+                config.CommitSHA, 
+                config.Branch,
+                config.Detection.DetectedAt.Format("20060102-150405"))
+        
+        hash := sha256.Sum256([]byte(data))
+        return fmt.Sprintf("%x", hash[:6]) // Use first 6 bytes for shorter ID
+}</span>
+
+// GetGeneratedNamespace generates a secure namespace name for a repository
+func GetGeneratedNamespace(repository types.Repository) string <span class="cov8" title="1">{
+        // Use the implementation from bootstrap-pipeline-architecture.md
+        repoString := fmt.Sprintf("%s/%s", extractOwnerFromURL(repository.URL), repository.Name)
+        hash := sha256.Sum256([]byte(repoString))
+        return fmt.Sprintf("reposentry-user-repo-%x", hash[:8])
+}</span>
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package tekton
+
+import (
+        "fmt"
+        "strings"
+        "text/template"
+)
+
+// generateApplyTasks generates tasks for apply mode
+func (bpg *BootstrapPipelineGenerator) generateApplyTasks(config *BootstrapPipelineConfig) ([]string, error) <span class="cov8" title="1">{
+        var tasks []string
+
+        // Clone task
+        cloneTask, err := bpg.generateCloneTask(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate clone task: %w", err)
+        }</span>
+        <span class="cov8" title="1">tasks = append(tasks, cloneTask)
+
+        // Validate task
+        validateTask, err := bpg.generateValidateTask(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate validate task: %w", err)
+        }</span>
+        <span class="cov8" title="1">tasks = append(tasks, validateTask)
+
+        // Apply resources task
+        applyTask, err := bpg.generateApplyResourcesTask(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate apply task: %w", err)
+        }</span>
+        <span class="cov8" title="1">tasks = append(tasks, applyTask)
+
+        return tasks, nil</span>
+}
+
+// generateTriggerTasks generates tasks for trigger mode
+func (bpg *BootstrapPipelineGenerator) generateTriggerTasks(config *BootstrapPipelineConfig) ([]string, error) <span class="cov8" title="1">{
+        var tasks []string
+
+        // Get apply tasks first
+        applyTasks, err := bpg.generateApplyTasks(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate apply tasks: %w", err)
+        }</span>
+        <span class="cov8" title="1">tasks = append(tasks, applyTasks...)
+
+        // Add trigger runs task
+        triggerTask, err := bpg.generateTriggerRunsTask(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate trigger task: %w", err)
+        }</span>
+        <span class="cov8" title="1">tasks = append(tasks, triggerTask)
+
+        return tasks, nil</span>
+}
+
+// generateValidateTasks generates tasks for validate mode
+func (bpg *BootstrapPipelineGenerator) generateValidateTasks(config *BootstrapPipelineConfig) ([]string, error) <span class="cov8" title="1">{
+        var tasks []string
+
+        // Clone task
+        cloneTask, err := bpg.generateCloneTask(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate clone task: %w", err)
+        }</span>
+        <span class="cov8" title="1">tasks = append(tasks, cloneTask)
+
+        // Validate only task
+        validateOnlyTask, err := bpg.generateValidateOnlyTask(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate validate-only task: %w", err)
+        }</span>
+        <span class="cov8" title="1">tasks = append(tasks, validateOnlyTask)
+
+        return tasks, nil</span>
+}
+
+// generateSkipTasks generates tasks for skip mode
+func (bpg *BootstrapPipelineGenerator) generateSkipTasks(config *BootstrapPipelineConfig) ([]string, error) <span class="cov8" title="1">{
+        var tasks []string
+
+        // Notify task
+        notifyTask, err := bpg.generateNotifyTask(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to generate notify task: %w", err)
+        }</span>
+        <span class="cov8" title="1">tasks = append(tasks, notifyTask)
+
+        return tasks, nil</span>
+}
+
+// generateCloneTask generates the repository clone task
+func (bpg *BootstrapPipelineGenerator) generateCloneTask(config *BootstrapPipelineConfig) (string, error) <span class="cov8" title="1">{
+        taskTemplate := `
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-clone
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap-task"
+    reposentry.io/function: "clone"
+spec:
+  description: "Clone repository from remote URL"
+  params:
+  - name: url
+    type: string
+    description: "Repository URL to clone"
+  - name: revision
+    type: string
+    description: "Git revision to checkout"
+    default: "main"
+  - name: depth
+    type: string
+    description: "Git clone depth"
+    default: "1"
+  workspaces:
+  - name: output
+    description: "The workspace to clone the repository to"
+  steps:
+  - name: clone
+    image: {{.CloneImage}}
+    workingDir: $(workspaces.output.path)
+    securityContext:
+      runAsNonRoot: {{.SecurityContext.runAsNonRoot}}
+      runAsUser: {{.SecurityContext.runAsUser}}
+    resources:
+      limits:
+        cpu: {{.ResourceLimits.cpu}}
+        memory: {{.ResourceLimits.memory}}
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+    script: |
+      #!/bin/sh
+      set -eu
+      
+      echo "Cloning repository: $(params.url)"
+      echo "Revision: $(params.revision)"
+      echo "Depth: $(params.depth)"
+      
+      # Clean any existing content
+      rm -rf .git *
+      
+      # Clone repository
+      /ko-app/git-init \
+        -url="$(params.url)" \
+        -revision="$(params.revision)" \
+        -path="$(workspaces.output.path)" \
+        -depth="$(params.depth)"
+      
+      echo "Repository cloned successfully"
+      ls -la $(workspaces.output.path)
+`
+
+        tmpl, err := template.New("clone-task").Parse(taskTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse clone task template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var taskBuffer strings.Builder
+        if err := tmpl.Execute(&amp;taskBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to execute clone task template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return taskBuffer.String(), nil</span>
+}
+
+// generateValidateTask generates the validation task
+func (bpg *BootstrapPipelineGenerator) generateValidateTask(config *BootstrapPipelineConfig) (string, error) <span class="cov8" title="1">{
+        taskTemplate := `
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-validate
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap-task"
+    reposentry.io/function: "validate"
+spec:
+  description: "Validate and process Tekton resources"
+  params:
+  - name: tekton-path
+    type: string
+    description: "Path to Tekton resources in repository"
+    default: ".tekton"
+  workspaces:
+  - name: source
+    description: "Source repository workspace"
+  - name: output
+    description: "Output workspace for processed resources"
+  steps:
+  - name: validate-resources
+    image: {{.KubectlImage}}
+    workingDir: $(workspaces.source.path)
+    securityContext:
+      runAsNonRoot: {{.SecurityContext.runAsNonRoot}}
+      runAsUser: {{.SecurityContext.runAsUser}}
+    resources:
+      limits:
+        cpu: {{.ResourceLimits.cpu}}
+        memory: {{.ResourceLimits.memory}}
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+    script: |
+      #!/bin/bash
+      set -eu
+      
+      TEKTON_PATH="$(params.tekton-path)"
+      OUTPUT_PATH="$(workspaces.output.path)"
+      
+      echo "Validating Tekton resources in: $TEKTON_PATH"
+      
+      # Check if tekton directory exists
+      if [ ! -d "$TEKTON_PATH" ]; then
+        echo "ERROR: Tekton directory $TEKTON_PATH not found"
+        exit 1
+      fi
+      
+      # Create output directory
+      mkdir -p "$OUTPUT_PATH"
+      
+      # Find and validate YAML files
+      find "$TEKTON_PATH" -name "*.yaml" -o -name "*.yml" | while read -r file; do
+        echo "Processing file: $file"
+        
+        # Basic YAML validation
+        if ! kubectl --dry-run=client --validate=true -f "$file" &gt; /dev/null 2&gt;&amp;1; then
+          echo "WARNING: Invalid YAML in $file"
+          continue
+        fi
+        
+        # Check if it's a Tekton resource
+        if kubectl --dry-run=client -f "$file" 2&gt;&amp;1 | grep -q "tekton.dev"; then
+          echo "Valid Tekton resource found: $file"
+          
+          # Copy to output with namespace injection
+          filename=$(basename "$file")
+          sed 's/namespace: .*/namespace: {{.Namespace}}/' "$file" &gt; "$OUTPUT_PATH/$filename"
+          
+          # If no namespace specified, add it
+          if ! grep -q "namespace:" "$file"; then
+            sed '/metadata:/a\  namespace: {{.Namespace}}' "$OUTPUT_PATH/$filename" &gt; "$OUTPUT_PATH/$filename.tmp"
+            mv "$OUTPUT_PATH/$filename.tmp" "$OUTPUT_PATH/$filename"
+          fi
+        else
+          echo "Skipping non-Tekton resource: $file"
+        fi
+      done
+      
+      echo "Validation completed. Processed resources:"
+      ls -la "$OUTPUT_PATH"
+`
+
+        tmpl, err := template.New("validate-task").Parse(taskTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse validate task template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var taskBuffer strings.Builder
+        if err := tmpl.Execute(&amp;taskBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to execute validate task template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return taskBuffer.String(), nil</span>
+}
+
+// generateApplyResourcesTask generates the apply resources task
+func (bpg *BootstrapPipelineGenerator) generateApplyResourcesTask(config *BootstrapPipelineConfig) (string, error) <span class="cov8" title="1">{
+        taskTemplate := `
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-apply-resources
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap-task"
+    reposentry.io/function: "apply"
+spec:
+  description: "Apply Tekton resources to Kubernetes"
+  params:
+  - name: namespace
+    type: string
+    description: "Target namespace for resources"
+  - name: resource-filter
+    type: string
+    description: "Filter resources by kind (comma-separated)"
+    default: "Pipeline,Task,PipelineRun,TaskRun"
+  workspaces:
+  - name: resources
+    description: "Workspace containing processed Tekton resources"
+  steps:
+  - name: apply-resources
+    image: {{.KubectlImage}}
+    workingDir: $(workspaces.resources.path)
+    securityContext:
+      runAsNonRoot: {{.SecurityContext.runAsNonRoot}}
+      runAsUser: {{.SecurityContext.runAsUser}}
+    resources:
+      limits:
+        cpu: {{.ResourceLimits.cpu}}
+        memory: {{.ResourceLimits.memory}}
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+    script: |
+      #!/bin/bash
+      set -eu
+      
+      NAMESPACE="$(params.namespace)"
+      RESOURCE_FILTER="$(params.resource-filter)"
+      
+      echo "Applying Tekton resources to namespace: $NAMESPACE"
+      echo "Resource filter: $RESOURCE_FILTER"
+      
+      # Convert filter to array
+      IFS=',' read -ra FILTERS &lt;&lt;&lt; "$RESOURCE_FILTER"
+      
+      # Apply resources by priority order
+      # First apply Tasks and Pipelines (definitions)
+      for filter in "${FILTERS[@]}"; do
+        filter=$(echo "$filter" | tr -d ' ')
+        
+        for file in *.yaml *.yml; do
+          [ -f "$file" ] || continue
+          
+          # Check if file contains the specified kind
+          if grep -q "kind: $filter" "$file"; then
+            echo "Applying $filter from $file"
+            
+            # Apply with proper error handling
+            if kubectl apply -f "$file" -n "$NAMESPACE"; then
+              echo "Successfully applied $filter from $file"
+            else
+              echo "WARNING: Failed to apply $filter from $file"
+              # Continue with other resources instead of failing
+            fi
+          fi
+        done
+      done
+      
+      echo "Resource application completed"
+      
+      # List applied resources
+      echo "Resources in namespace $NAMESPACE:"
+      kubectl get all -n "$NAMESPACE" --show-labels | grep "reposentry"
+`
+
+        tmpl, err := template.New("apply-task").Parse(taskTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse apply task template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var taskBuffer strings.Builder
+        if err := tmpl.Execute(&amp;taskBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to execute apply task template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return taskBuffer.String(), nil</span>
+}
+
+// generateTriggerRunsTask generates the trigger runs task
+func (bpg *BootstrapPipelineGenerator) generateTriggerRunsTask(config *BootstrapPipelineConfig) (string, error) <span class="cov8" title="1">{
+        taskTemplate := `
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-trigger-runs
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap-task"
+    reposentry.io/function: "trigger"
+spec:
+  description: "Trigger PipelineRuns and TaskRuns"
+  params:
+  - name: namespace
+    type: string
+    description: "Target namespace"
+  workspaces:
+  - name: resources
+    description: "Workspace containing processed resources"
+  steps:
+  - name: trigger-runs
+    image: {{.KubectlImage}}
+    workingDir: $(workspaces.resources.path)
+    securityContext:
+      runAsNonRoot: {{.SecurityContext.runAsNonRoot}}
+      runAsUser: {{.SecurityContext.runAsUser}}
+    resources:
+      limits:
+        cpu: {{.ResourceLimits.cpu}}
+        memory: {{.ResourceLimits.memory}}
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+    script: |
+      #!/bin/bash
+      set -eu
+      
+      NAMESPACE="$(params.namespace)"
+      
+      echo "Triggering runs in namespace: $NAMESPACE"
+      
+      # First apply PipelineRuns
+      for file in *.yaml *.yml; do
+        [ -f "$file" ] || continue
+        
+        if grep -q "kind: PipelineRun" "$file"; then
+          echo "Triggering PipelineRun from $file"
+          kubectl apply -f "$file" -n "$NAMESPACE"
+        fi
+      done
+      
+      # Then apply TaskRuns
+      for file in *.yaml *.yml; do
+        [ -f "$file" ] || continue
+        
+        if grep -q "kind: TaskRun" "$file"; then
+          echo "Triggering TaskRun from $file"
+          kubectl apply -f "$file" -n "$NAMESPACE"
+        fi
+      done
+      
+      echo "Triggered runs completed"
+      
+      # Show status
+      echo "PipelineRuns:"
+      kubectl get pipelineruns -n "$NAMESPACE"
+      
+      echo "TaskRuns:"
+      kubectl get taskruns -n "$NAMESPACE"
+`
+
+        tmpl, err := template.New("trigger-task").Parse(taskTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse trigger task template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var taskBuffer strings.Builder
+        if err := tmpl.Execute(&amp;taskBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to execute trigger task template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return taskBuffer.String(), nil</span>
+}
+
+// generateValidateOnlyTask generates the validate-only task
+func (bpg *BootstrapPipelineGenerator) generateValidateOnlyTask(config *BootstrapPipelineConfig) (string, error) <span class="cov8" title="1">{
+        taskTemplate := `
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-validate-only
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap-task"
+    reposentry.io/function: "validate-only"
+spec:
+  description: "Validate Tekton resources without applying"
+  params:
+  - name: tekton-path
+    type: string
+    description: "Path to Tekton resources"
+    default: ".tekton"
+  workspaces:
+  - name: source
+    description: "Source repository workspace"
+  steps:
+  - name: validate-only
+    image: {{.KubectlImage}}
+    workingDir: $(workspaces.source.path)
+    securityContext:
+      runAsNonRoot: {{.SecurityContext.runAsNonRoot}}
+      runAsUser: {{.SecurityContext.runAsUser}}
+    resources:
+      limits:
+        cpu: {{.ResourceLimits.cpu}}
+        memory: {{.ResourceLimits.memory}}
+    script: |
+      #!/bin/bash
+      set -eu
+      
+      TEKTON_PATH="$(params.tekton-path)"
+      
+      echo "Validating Tekton resources in: $TEKTON_PATH"
+      
+      if [ ! -d "$TEKTON_PATH" ]; then
+        echo "ERROR: Tekton directory $TEKTON_PATH not found"
+        exit 1
+      fi
+      
+      VALID_COUNT=0
+      INVALID_COUNT=0
+      
+      find "$TEKTON_PATH" -name "*.yaml" -o -name "*.yml" | while read -r file; do
+        echo "Validating file: $file"
+        
+        if kubectl --dry-run=client --validate=true -f "$file" &gt; /dev/null 2&gt;&amp;1; then
+          echo "✓ Valid: $file"
+          VALID_COUNT=$((VALID_COUNT + 1))
+        else
+          echo "✗ Invalid: $file"
+          INVALID_COUNT=$((INVALID_COUNT + 1))
+        fi
+      done
+      
+      echo "Validation completed"
+      echo "Valid files: $VALID_COUNT"
+      echo "Invalid files: $INVALID_COUNT"
+      
+      if [ $INVALID_COUNT -gt 0 ]; then
+        echo "WARNING: Some files failed validation"
+        exit 1
+      fi
+`
+
+        tmpl, err := template.New("validate-only-task").Parse(taskTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse validate-only task template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var taskBuffer strings.Builder
+        if err := tmpl.Execute(&amp;taskBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to execute validate-only task template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return taskBuffer.String(), nil</span>
+}
+
+// generateNotifyTask generates the notification task
+func (bpg *BootstrapPipelineGenerator) generateNotifyTask(config *BootstrapPipelineConfig) (string, error) <span class="cov8" title="1">{
+        taskTemplate := `
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-notify
+  namespace: {{.Namespace}}
+  labels:
+    reposentry.io/type: "bootstrap-task"
+    reposentry.io/function: "notify"
+spec:
+  description: "Send notification about processing status"
+  params:
+  - name: message
+    type: string
+    description: "Notification message"
+  - name: status
+    type: string
+    description: "Processing status"
+    default: "info"
+  steps:
+  - name: notify
+    image: alpine:3.18
+    securityContext:
+      runAsNonRoot: {{.SecurityContext.runAsNonRoot}}
+      runAsUser: {{.SecurityContext.runAsUser}}
+    resources:
+      limits:
+        cpu: "100m"
+        memory: "128Mi"
+    script: |
+      #!/bin/sh
+      set -eu
+      
+      MESSAGE="$(params.message)"
+      STATUS="$(params.status)"
+      
+      echo "=== RepoSentry Bootstrap Notification ==="
+      echo "Status: $STATUS"
+      echo "Message: $MESSAGE"
+      echo "Timestamp: $(date -Iseconds)"
+      echo "Repository: {{.Repository.Name}}"
+      echo "Commit: {{.CommitSHA}}"
+      echo "Branch: {{.Branch}}"
+      echo "========================================="
+      
+      # TODO: Add webhook notification, Slack integration, etc.
+`
+
+        tmpl, err := template.New("notify-task").Parse(taskTemplate)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to parse notify task template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">var taskBuffer strings.Builder
+        if err := tmpl.Execute(&amp;taskBuffer, config); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to execute notify task template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return taskBuffer.String(), nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package tekton
+
+import (
+        "context"
+        "fmt"
+        "path/filepath"
+        "regexp"
+        "strings"
+        "time"
+
+        "github.com/johnnynv/RepoSentry/internal/gitclient"
+        "github.com/johnnynv/RepoSentry/pkg/logger"
+        "github.com/johnnynv/RepoSentry/pkg/types"
+        "gopkg.in/yaml.v3"
+)
+
+// TektonDetector detects and analyzes Tekton resources in REMOTE repositories
+// IMPORTANT: This detector scans .tekton/ directories in REMOTE user repositories
+// (configured in RepoSentry's monitoring YAML), NOT local RepoSentry directories.
+// It uses GitClient to access remote repository content via GitHub/GitLab APIs.
+type TektonDetector struct {
+        gitClient gitclient.GitClient
+        logger    *logger.Entry
+        config    DetectorConfig
+}
+
+// DetectorConfig configures the Tekton detector behavior
+type DetectorConfig struct {
+        // ScanPath is the base path to scan for Tekton files (default: ".tekton")
+        ScanPath string `json:"scan_path"`
+
+        // FileExtensions are the file extensions to consider as Tekton files
+        FileExtensions []string `json:"file_extensions"`
+
+        // MaxFileSize is the maximum file size to process (in bytes)
+        MaxFileSize int64 `json:"max_file_size"`
+
+        // Timeout for detection operations
+        Timeout time.Duration `json:"timeout"`
+}
+
+// TektonDetection represents the result of Tekton resource detection
+type TektonDetection struct {
+        // Repository information
+        Repository types.Repository `json:"repository"`
+        CommitSHA  string           `json:"commit_sha"`
+        Branch     string           `json:"branch"`
+
+        // Detection results
+        HasTektonDirectory bool             `json:"has_tekton_directory"`
+        TektonFiles        []TektonFile     `json:"tekton_files"`
+        Resources          []TektonResource `json:"resources"`
+
+        // Detection metadata
+        DetectedAt time.Time `json:"detected_at"`
+        ScanPath   string    `json:"scan_path"`
+        TotalFiles int       `json:"total_files"`
+        ValidFiles int       `json:"valid_files"`
+
+        // Processing results
+        EstimatedAction string   `json:"estimated_action"` // "apply", "trigger", "validate", "skip"
+        Errors          []string `json:"errors,omitempty"`
+        Warnings        []string `json:"warnings,omitempty"`
+}
+
+// TektonFile represents a single Tekton YAML file
+type TektonFile struct {
+        Path         string    `json:"path"`
+        Size         int64     `json:"size"`
+        LastModified time.Time `json:"last_modified,omitempty"`
+        IsValid      bool      `json:"is_valid"`
+        ErrorMessage string    `json:"error_message,omitempty"`
+}
+
+// TektonResource represents a parsed Tekton resource from YAML
+type TektonResource struct {
+        // Kubernetes resource fields
+        APIVersion string `json:"api_version"`
+        Kind       string `json:"kind"`
+        Name       string `json:"name"`
+        Namespace  string `json:"namespace,omitempty"`
+
+        // Source information
+        FilePath      string `json:"file_path"`
+        ResourceIndex int    `json:"resource_index"` // Index within the file if multiple resources
+
+        // Tekton-specific information
+        ResourceType string                 `json:"resource_type"` // "Task", "Pipeline", "PipelineRun", etc.
+        Spec         map[string]interface{} `json:"spec,omitempty"`
+
+        // Validation
+        IsValid      bool     `json:"is_valid"`
+        Errors       []string `json:"errors,omitempty"`
+        Dependencies []string `json:"dependencies,omitempty"` // Referenced resources
+}
+
+// NewTektonDetector creates a new Tekton detector
+func NewTektonDetector(gitClient gitclient.GitClient, parentLogger *logger.Entry) *TektonDetector <span class="cov8" title="1">{
+        detectorLogger := parentLogger.WithFields(logger.Fields{
+                "component": "tekton-detector",
+        })
+
+        return &amp;TektonDetector{
+                gitClient: gitClient,
+                logger:    detectorLogger,
+                config:    getDefaultDetectorConfig(),
+        }
+}</span>
+
+// getDefaultDetectorConfig returns the default detector configuration
+func getDefaultDetectorConfig() DetectorConfig <span class="cov8" title="1">{
+        return DetectorConfig{
+                ScanPath:       ".tekton",
+                FileExtensions: []string{".yaml", ".yml"},
+                MaxFileSize:    1 * 1024 * 1024, // 1MB
+                Timeout:        30 * time.Second,
+        }
+}</span>
+
+// DetectTektonResources detects Tekton resources in a REMOTE repository
+// This function scans the .tekton/ directory in the specified REMOTE repository
+// using GitClient APIs (GitHub/GitLab) to access remote repository content.
+func (d *TektonDetector) DetectTektonResources(ctx context.Context, repo types.Repository, commitSHA, branch string) (*TektonDetection, error) <span class="cov8" title="1">{
+        startTime := time.Now()
+
+        d.logger.WithFields(logger.Fields{
+                "operation":  "detect_tekton_resources",
+                "repository": repo.Name,
+                "commit":     commitSHA,
+                "branch":     branch,
+                "scan_path":  d.config.ScanPath,
+        }).Info("Starting Tekton resource detection")
+
+        // Create context with timeout
+        ctx, cancel := context.WithTimeout(ctx, d.config.Timeout)
+        defer cancel()
+
+        detection := &amp;TektonDetection{
+                Repository:  repo,
+                CommitSHA:   commitSHA,
+                Branch:      branch,
+                DetectedAt:  startTime,
+                ScanPath:    d.config.ScanPath,
+                TektonFiles: []TektonFile{},
+                Resources:   []TektonResource{},
+                Errors:      []string{},
+                Warnings:    []string{},
+        }
+
+        // Check if .tekton directory exists in the REMOTE repository
+        hasDir, err := d.gitClient.CheckDirectoryExists(ctx, repo, commitSHA, d.config.ScanPath)
+        if err != nil </span><span class="cov8" title="1">{
+                detection.Errors = append(detection.Errors, fmt.Sprintf("Failed to check .tekton directory: %v", err))
+                return detection, nil // Return partial results
+        }</span>
+
+        <span class="cov8" title="1">detection.HasTektonDirectory = hasDir
+        if !hasDir </span><span class="cov8" title="1">{
+                d.logger.WithFields(logger.Fields{
+                        "repository": repo.Name,
+                        "scan_path":  d.config.ScanPath,
+                }).Info("No .tekton directory found")
+                detection.EstimatedAction = "skip"
+                return detection, nil
+        }</span>
+
+        // List all files in .tekton directory of the REMOTE repository
+        <span class="cov8" title="1">files, err := d.gitClient.ListFiles(ctx, repo, commitSHA, d.config.ScanPath)
+        if err != nil </span><span class="cov0" title="0">{
+                detection.Errors = append(detection.Errors, fmt.Sprintf("Failed to list files in .tekton directory: %v", err))
+                return detection, nil
+        }</span>
+
+        <span class="cov8" title="1">detection.TotalFiles = len(files)
+
+        // Process each file
+        for _, filePath := range files </span><span class="cov8" title="1">{
+                if d.isTektonFile(filePath) </span><span class="cov8" title="1">{
+                        tektonFile, resources, err := d.processFile(ctx, repo, commitSHA, filePath)
+                        if err != nil </span><span class="cov8" title="1">{
+                                d.logger.WithError(err).WithFields(logger.Fields{
+                                        "file_path":  filePath,
+                                        "repository": repo.Name,
+                                }).Warn("Failed to process Tekton file")
+
+                                tektonFile.IsValid = false
+                                tektonFile.ErrorMessage = err.Error()
+                        }</span> else<span class="cov8" title="1"> {
+                                tektonFile.IsValid = true
+                                detection.ValidFiles++
+                                detection.Resources = append(detection.Resources, resources...)
+                        }</span>
+
+                        <span class="cov8" title="1">detection.TektonFiles = append(detection.TektonFiles, tektonFile)</span>
+                }
+        }
+
+        // Determine estimated action based on detected resources
+        <span class="cov8" title="1">detection.EstimatedAction = d.determineEstimatedAction(detection)
+
+        d.logger.WithFields(logger.Fields{
+                "repository":       repo.Name,
+                "total_files":      detection.TotalFiles,
+                "valid_files":      detection.ValidFiles,
+                "resources":        len(detection.Resources),
+                "estimated_action": detection.EstimatedAction,
+                "duration":         time.Since(startTime),
+        }).Info("Completed Tekton resource detection")
+
+        return detection, nil</span>
+}
+
+// isTektonFile checks if a file should be processed as a Tekton file
+func (d *TektonDetector) isTektonFile(filePath string) bool <span class="cov8" title="1">{
+        ext := strings.ToLower(filepath.Ext(filePath))
+        for _, validExt := range d.config.FileExtensions </span><span class="cov8" title="1">{
+                if ext == validExt </span><span class="cov8" title="1">{
+                        return true
+                }</span>
+        }
+        <span class="cov8" title="1">return false</span>
+}
+
+// processFile processes a single Tekton YAML file
+func (d *TektonDetector) processFile(ctx context.Context, repo types.Repository, commitSHA, filePath string) (TektonFile, []TektonResource, error) <span class="cov8" title="1">{
+        tektonFile := TektonFile{
+                Path:    filePath,
+                IsValid: false,
+        }
+
+        // Get file content from REMOTE repository
+        content, err := d.gitClient.GetFileContent(ctx, repo, commitSHA, filePath)
+        if err != nil </span><span class="cov0" title="0">{
+                return tektonFile, nil, fmt.Errorf("failed to get file content: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">tektonFile.Size = int64(len(content))
+
+        // Check file size limit
+        if tektonFile.Size &gt; d.config.MaxFileSize </span><span class="cov0" title="0">{
+                return tektonFile, nil, fmt.Errorf("file size %d exceeds limit %d", tektonFile.Size, d.config.MaxFileSize)
+        }</span>
+
+        // Parse YAML content
+        <span class="cov8" title="1">resources, err := d.parseYAMLContent(content, filePath)
+        if err != nil </span><span class="cov8" title="1">{
+                return tektonFile, nil, fmt.Errorf("failed to parse YAML: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">tektonFile.IsValid = len(resources) &gt; 0
+        return tektonFile, resources, nil</span>
+}
+
+// parseYAMLContent parses YAML content and extracts Tekton resources
+func (d *TektonDetector) parseYAMLContent(content []byte, filePath string) ([]TektonResource, error) <span class="cov8" title="1">{
+        var resources []TektonResource
+
+        // Split content by document separator for multi-document YAML
+        docs := strings.Split(string(content), "---")
+
+        for docIndex, doc := range docs </span><span class="cov8" title="1">{
+                doc = strings.TrimSpace(doc)
+                if doc == "" </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">var resource map[string]interface{}
+                if err := yaml.Unmarshal([]byte(doc), &amp;resource); err != nil </span><span class="cov8" title="1">{
+                        return nil, fmt.Errorf("invalid YAML in document %d: %w", docIndex, err)
+                }</span>
+
+                // Extract basic Kubernetes resource fields
+                <span class="cov8" title="1">apiVersion, _ := resource["apiVersion"].(string)
+                kind, _ := resource["kind"].(string)
+
+                if apiVersion == "" || kind == "" </span><span class="cov0" title="0">{
+                        continue</span> // Skip resources without required fields
+                }
+
+                // Check if this is a Tekton resource
+                <span class="cov8" title="1">if !d.isTektonResource(apiVersion, kind) </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                // Extract metadata
+                <span class="cov8" title="1">metadata, _ := resource["metadata"].(map[string]interface{})
+                var name, namespace string
+                if metadata != nil </span><span class="cov8" title="1">{
+                        name, _ = metadata["name"].(string)
+                        namespace, _ = metadata["namespace"].(string)
+                }</span>
+
+                // Extract spec
+                <span class="cov8" title="1">spec, _ := resource["spec"].(map[string]interface{})
+
+                tektonResource := TektonResource{
+                        APIVersion:    apiVersion,
+                        Kind:          kind,
+                        Name:          name,
+                        Namespace:     namespace,
+                        FilePath:      filePath,
+                        ResourceIndex: docIndex,
+                        ResourceType:  kind,
+                        Spec:          spec,
+                        IsValid:       true,
+                        Errors:        []string{},
+                        Dependencies:  []string{},
+                }
+
+                // Basic validation
+                if name == "" </span><span class="cov0" title="0">{
+                        tektonResource.IsValid = false
+                        tektonResource.Errors = append(tektonResource.Errors, "resource name is required")
+                }</span>
+
+                <span class="cov8" title="1">resources = append(resources, tektonResource)</span>
+        }
+
+        <span class="cov8" title="1">return resources, nil</span>
+}
+
+// isTektonResource checks if the given apiVersion and kind represent a Tekton resource
+func (d *TektonDetector) isTektonResource(apiVersion, kind string) bool <span class="cov8" title="1">{
+        // Tekton API versions and kinds
+        tektonPatterns := map[string][]string{
+                "tekton.dev/v1beta1":           {"Task", "Pipeline", "PipelineRun", "TaskRun"},
+                "tekton.dev/v1":                {"Task", "Pipeline", "PipelineRun", "TaskRun"},
+                "triggers.tekton.dev/v1beta1":  {"EventListener", "Trigger", "TriggerBinding", "TriggerTemplate", "ClusterTriggerBinding"},
+                "triggers.tekton.dev/v1alpha1": {"EventListener", "Trigger", "TriggerBinding", "TriggerTemplate", "ClusterTriggerBinding"},
+        }
+
+        if kinds, exists := tektonPatterns[apiVersion]; exists </span><span class="cov8" title="1">{
+                for _, validKind := range kinds </span><span class="cov8" title="1">{
+                        if kind == validKind </span><span class="cov8" title="1">{
+                                return true
+                        }</span>
+                }
+        }
+
+        <span class="cov8" title="1">return false</span>
+}
+
+// determineEstimatedAction determines what action should be taken based on detected resources
+func (d *TektonDetector) determineEstimatedAction(detection *TektonDetection) string <span class="cov8" title="1">{
+        if len(detection.Resources) == 0 </span><span class="cov8" title="1">{
+                return "skip"
+        }</span>
+
+        <span class="cov8" title="1">hasRunnableResources := false
+        hasDefinitionResources := false
+
+        for _, resource := range detection.Resources </span><span class="cov8" title="1">{
+                switch resource.Kind </span>{
+                case "PipelineRun", "TaskRun":<span class="cov8" title="1">
+                        hasRunnableResources = true</span>
+                case "Pipeline", "Task":<span class="cov8" title="1">
+                        hasDefinitionResources = true</span>
+                }
+        }
+
+        // If we have runnable resources (PipelineRun/TaskRun), trigger them
+        <span class="cov8" title="1">if hasRunnableResources </span><span class="cov8" title="1">{
+                return "trigger"
+        }</span>
+
+        // If we only have definitions, apply them and validate
+        <span class="cov8" title="1">if hasDefinitionResources </span><span class="cov8" title="1">{
+                return "apply"
+        }</span>
+
+        // Default to validation
+        <span class="cov0" title="0">return "validate"</span>
+}
+
+// SetConfig updates the detector configuration
+func (d *TektonDetector) SetConfig(config DetectorConfig) <span class="cov8" title="1">{
+        d.config = config
+}</span>
+
+// GetConfig returns the current detector configuration
+func (d *TektonDetector) GetConfig() DetectorConfig <span class="cov8" title="1">{
+        return d.config
+}</span>
+
+// ValidateResource performs additional validation on a Tekton resource
+func (d *TektonDetector) ValidateResource(resource *TektonResource) error <span class="cov8" title="1">{
+        if resource.Name == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("resource name is required")
+        }</span>
+
+        // Validate name format (Kubernetes naming rules)
+        <span class="cov8" title="1">validName := regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+        if !validName.MatchString(resource.Name) </span><span class="cov8" title="1">{
+                return fmt.Errorf("invalid resource name format: %s", resource.Name)
+        }</span>
+
+        // Additional kind-specific validation can be added here
+        <span class="cov8" title="1">switch resource.Kind </span>{
+        case "Pipeline":<span class="cov8" title="1">
+                return d.validatePipeline(resource)</span>
+        case "Task":<span class="cov0" title="0">
+                return d.validateTask(resource)</span>
+        case "PipelineRun":<span class="cov0" title="0">
+                return d.validatePipelineRun(resource)</span>
+        case "TaskRun":<span class="cov0" title="0">
+                return d.validateTaskRun(resource)</span>
+        }
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// validatePipeline validates a Pipeline resource
+func (d *TektonDetector) validatePipeline(resource *TektonResource) error <span class="cov8" title="1">{
+        if resource.Spec == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("pipeline spec is required")
+        }</span>
+
+        // Check for required fields in spec
+        <span class="cov8" title="1">if _, hasParams := resource.Spec["params"]; hasParams </span>{<span class="cov0" title="0">
+                // Validate params if present
+        }</span>
+
+        <span class="cov8" title="1">if tasks, hasTasks := resource.Spec["tasks"]; hasTasks </span><span class="cov8" title="1">{
+                if taskList, ok := tasks.([]interface{}); ok &amp;&amp; len(taskList) == 0 </span><span class="cov8" title="1">{
+                        return fmt.Errorf("pipeline must have at least one task")
+                }</span>
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// validateTask validates a Task resource
+func (d *TektonDetector) validateTask(resource *TektonResource) error <span class="cov0" title="0">{
+        if resource.Spec == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("task spec is required")
+        }</span>
+
+        // Check for steps
+        <span class="cov0" title="0">if steps, hasSteps := resource.Spec["steps"]; hasSteps </span><span class="cov0" title="0">{
+                if stepList, ok := steps.([]interface{}); ok &amp;&amp; len(stepList) == 0 </span><span class="cov0" title="0">{
+                        return fmt.Errorf("task must have at least one step")
+                }</span>
+        }
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// validatePipelineRun validates a PipelineRun resource
+func (d *TektonDetector) validatePipelineRun(resource *TektonResource) error <span class="cov0" title="0">{
+        if resource.Spec == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("pipelineRun spec is required")
+        }</span>
+
+        // Check for pipeline reference
+        <span class="cov0" title="0">if pipelineRef, hasPipelineRef := resource.Spec["pipelineRef"]; hasPipelineRef </span><span class="cov0" title="0">{
+                if pipelineRefMap, ok := pipelineRef.(map[string]interface{}); ok </span><span class="cov0" title="0">{
+                        if name, hasName := pipelineRefMap["name"]; !hasName || name == "" </span><span class="cov0" title="0">{
+                                return fmt.Errorf("pipelineRun must reference a pipeline by name")
+                        }</span>
+                }
+        } else<span class="cov0" title="0"> if _, hasPipelineSpec := resource.Spec["pipelineSpec"]; !hasPipelineSpec </span><span class="cov0" title="0">{
+                return fmt.Errorf("pipelineRun must have either pipelineRef or pipelineSpec")
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// validateTaskRun validates a TaskRun resource
+func (d *TektonDetector) validateTaskRun(resource *TektonResource) error <span class="cov0" title="0">{
+        if resource.Spec == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("taskRun spec is required")
+        }</span>
+
+        // Check for task reference
+        <span class="cov0" title="0">if taskRef, hasTaskRef := resource.Spec["taskRef"]; hasTaskRef </span><span class="cov0" title="0">{
+                if taskRefMap, ok := taskRef.(map[string]interface{}); ok </span><span class="cov0" title="0">{
+                        if name, hasName := taskRefMap["name"]; !hasName || name == "" </span><span class="cov0" title="0">{
+                                return fmt.Errorf("taskRun must reference a task by name")
+                        }</span>
+                }
+        } else<span class="cov0" title="0"> if _, hasTaskSpec := resource.Spec["taskSpec"]; !hasTaskSpec </span><span class="cov0" title="0">{
+                return fmt.Errorf("taskRun must have either taskRef or taskSpec")
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package tekton
+
+import (
+        "crypto/sha256"
+        "fmt"
+        "strings"
+        "time"
+
+        "github.com/johnnynv/RepoSentry/pkg/logger"
+        "github.com/johnnynv/RepoSentry/pkg/types"
+)
+
+// TektonEventGenerator generates events from Tekton detection results
+type TektonEventGenerator struct {
+        logger *logger.Entry
+}
+
+// NewTektonEventGenerator creates a new Tekton event generator
+func NewTektonEventGenerator(parentLogger *logger.Entry) *TektonEventGenerator <span class="cov8" title="1">{
+        eventLogger := parentLogger.WithFields(logger.Fields{
+                "component": "tekton-event-generator",
+        })
+
+        return &amp;TektonEventGenerator{
+                logger: eventLogger,
+        }
+}</span>
+
+// GenerateDetectionEvent creates a TektonDetectionEvent from detection results
+func (teg *TektonEventGenerator) GenerateDetectionEvent(detection *TektonDetection) (*types.TektonDetectionEvent, error) <span class="cov8" title="1">{
+        teg.logger.WithFields(logger.Fields{
+                "operation":  "generate_detection_event",
+                "repository": detection.Repository.Name,
+                "commit":     detection.CommitSHA,
+                "branch":     detection.Branch,
+                "has_tekton": detection.HasTektonDirectory,
+                "action":     detection.EstimatedAction,
+        }).Info("Generating Tekton detection event")
+
+        // Generate unique event ID
+        eventID := teg.generateEventID(detection)
+
+        // Convert detection to event payload
+        detectionPayload := teg.convertDetectionToPayload(detection)
+
+        // Create the event
+        event := &amp;types.TektonDetectionEvent{
+                Source:    "reposentry",
+                EventType: "tekton_detected",
+                EventID:   eventID,
+                Timestamp: time.Now(),
+
+                Repository: types.TektonRepository{
+                        Name:     detection.Repository.Name,
+                        URL:      detection.Repository.URL,
+                        CloneURL: detection.Repository.URL, // In our case, same as URL
+                        Owner:    extractOwnerFromURL(detection.Repository.URL),
+                },
+
+                Branch: types.TektonBranch{
+                        Name:      detection.Branch,
+                        Protected: false, // TODO: Could be enhanced to detect protected branches
+                },
+
+                Commit: types.TektonCommit{
+                        SHA:       detection.CommitSHA,
+                        Timestamp: detection.DetectedAt,
+                },
+
+                Provider:  detection.Repository.Provider,
+                Detection: detectionPayload,
+                Headers:   teg.generateHeaders(detection),
+        }
+
+        teg.logger.WithFields(logger.Fields{
+                "event_id":         event.EventID,
+                "estimated_action": event.Detection.EstimatedAction,
+                "resource_count":   len(event.Detection.Resources),
+                "total_files":      event.Detection.TotalFiles,
+        }).Info("Successfully generated Tekton detection event")
+
+        return event, nil
+}</span>
+
+// GenerateStandardEvent creates a standard Event from Tekton detection for storage
+func (teg *TektonEventGenerator) GenerateStandardEvent(detection *TektonDetection) (*types.Event, error) <span class="cov8" title="1">{
+        eventID := teg.generateEventID(detection)
+
+        // Create metadata with detection summary
+        metadata := map[string]string{
+                "scan_path":        detection.ScanPath,
+                "estimated_action": detection.EstimatedAction,
+                "total_files":      fmt.Sprintf("%d", detection.TotalFiles),
+                "valid_files":      fmt.Sprintf("%d", detection.ValidFiles),
+                "resource_count":   fmt.Sprintf("%d", len(detection.Resources)),
+        }
+
+        if detection.HasTektonDirectory </span><span class="cov8" title="1">{
+                metadata["has_tekton_directory"] = "true"
+        }</span> else<span class="cov8" title="1"> {
+                metadata["has_tekton_directory"] = "false"
+        }</span>
+
+        // Add resource type counts
+        <span class="cov8" title="1">resourceCounts := teg.countResourcesByType(detection.Resources)
+        for resourceType, count := range resourceCounts </span><span class="cov8" title="1">{
+                metadata[fmt.Sprintf("resources_%s", resourceType)] = fmt.Sprintf("%d", count)
+        }</span>
+
+        <span class="cov8" title="1">event := &amp;types.Event{
+                ID:         eventID,
+                Type:       types.EventTypeTektonDetected,
+                Repository: detection.Repository.Name,
+                Branch:     detection.Branch,
+                CommitSHA:  detection.CommitSHA,
+                Provider:   detection.Repository.Provider,
+                Timestamp:  detection.DetectedAt,
+                Metadata:   metadata,
+                Status:     types.EventStatusPending,
+                CreatedAt:  time.Now(),
+                UpdatedAt:  time.Now(),
+        }
+
+        return event, nil</span>
+}
+
+// convertDetectionToPayload converts TektonDetection to TektonDetectionPayload
+func (teg *TektonEventGenerator) convertDetectionToPayload(detection *TektonDetection) types.TektonDetectionPayload <span class="cov8" title="1">{
+        // Convert resources to summaries
+        resourceSummaries := make([]types.TektonResourceSummary, 0, len(detection.Resources))
+        for _, resource := range detection.Resources </span><span class="cov8" title="1">{
+                summary := types.TektonResourceSummary{
+                        APIVersion:    resource.APIVersion,
+                        Kind:          resource.Kind,
+                        Name:          resource.Name,
+                        Namespace:     resource.Namespace,
+                        FilePath:      resource.FilePath,
+                        ResourceIndex: resource.ResourceIndex,
+                        IsValid:       resource.IsValid,
+                        Errors:        resource.Errors,
+                        Dependencies:  resource.Dependencies,
+                }
+                resourceSummaries = append(resourceSummaries, summary)
+        }</span>
+
+        // Count resources by type
+        <span class="cov8" title="1">resourceCounts := teg.countResourcesByType(detection.Resources)
+
+        // Generate action reasons
+        actionReasons := teg.generateActionReasons(detection)
+
+        return types.TektonDetectionPayload{
+                HasTektonDirectory: detection.HasTektonDirectory,
+                ScanPath:           detection.ScanPath,
+                DetectedAt:         detection.DetectedAt,
+                TotalFiles:         detection.TotalFiles,
+                ValidFiles:         detection.ValidFiles,
+                Resources:          resourceSummaries,
+                ResourceCounts:     resourceCounts,
+                EstimatedAction:    detection.EstimatedAction,
+                ActionReasons:      actionReasons,
+                Errors:             detection.Errors,
+                Warnings:           detection.Warnings,
+        }</span>
+}
+
+// generateEventID creates a unique event ID based on detection data
+func (teg *TektonEventGenerator) generateEventID(detection *TektonDetection) string <span class="cov8" title="1">{
+        // Create a unique identifier based on repo, commit, and timestamp
+        data := fmt.Sprintf("%s:%s:%s:%d",
+                detection.Repository.Name,
+                detection.CommitSHA,
+                detection.Branch,
+                detection.DetectedAt.Unix())
+
+        hash := sha256.Sum256([]byte(data))
+        return fmt.Sprintf("tekton-detection-%x", hash[:8]) // Use first 8 bytes of hash
+}</span>
+
+// generateHeaders creates event headers with additional metadata
+func (teg *TektonEventGenerator) generateHeaders(detection *TektonDetection) map[string]string <span class="cov8" title="1">{
+        headers := map[string]string{
+                "X-RepoSentry-Source":       "tekton-detector",
+                "X-RepoSentry-Version":      "1.0", // TODO: Get from build info
+                "X-Repository-Provider":     detection.Repository.Provider,
+                "X-Tekton-Scan-Path":        detection.ScanPath,
+                "X-Tekton-Estimated-Action": detection.EstimatedAction,
+        }
+
+        if detection.HasTektonDirectory </span><span class="cov8" title="1">{
+                headers["X-Tekton-Directory-Found"] = "true"
+        }</span> else<span class="cov8" title="1"> {
+                headers["X-Tekton-Directory-Found"] = "false"
+        }</span>
+
+        <span class="cov8" title="1">return headers</span>
+}
+
+// countResourcesByType counts resources by their Kind
+func (teg *TektonEventGenerator) countResourcesByType(resources []TektonResource) map[string]int <span class="cov8" title="1">{
+        counts := make(map[string]int)
+        for _, resource := range resources </span><span class="cov8" title="1">{
+                counts[resource.Kind]++
+        }</span>
+        <span class="cov8" title="1">return counts</span>
+}
+
+// generateActionReasons creates explanations for the estimated action
+func (teg *TektonEventGenerator) generateActionReasons(detection *TektonDetection) []string <span class="cov8" title="1">{
+        var reasons []string
+
+        switch detection.EstimatedAction </span>{
+        case "skip":<span class="cov8" title="1">
+                if !detection.HasTektonDirectory </span><span class="cov8" title="1">{
+                        reasons = append(reasons, "No .tekton directory found")
+                }</span> else<span class="cov8" title="1"> if len(detection.Resources) == 0 </span><span class="cov8" title="1">{
+                        reasons = append(reasons, "No valid Tekton resources found")
+                }</span>
+
+        case "trigger":<span class="cov8" title="1">
+                hasRunnableResources := false
+                for _, resource := range detection.Resources </span><span class="cov8" title="1">{
+                        if resource.Kind == "PipelineRun" || resource.Kind == "TaskRun" </span><span class="cov8" title="1">{
+                                hasRunnableResources = true
+                                reasons = append(reasons, fmt.Sprintf("Found runnable resource: %s/%s", resource.Kind, resource.Name))
+                        }</span>
+                }
+                <span class="cov8" title="1">if !hasRunnableResources </span><span class="cov0" title="0">{
+                        reasons = append(reasons, "Contains runnable Tekton resources")
+                }</span>
+
+        case "apply":<span class="cov8" title="1">
+                hasDefinitions := false
+                for _, resource := range detection.Resources </span><span class="cov8" title="1">{
+                        if resource.Kind == "Pipeline" || resource.Kind == "Task" </span><span class="cov8" title="1">{
+                                hasDefinitions = true
+                                reasons = append(reasons, fmt.Sprintf("Found definition resource: %s/%s", resource.Kind, resource.Name))
+                        }</span>
+                }
+                <span class="cov8" title="1">if !hasDefinitions </span><span class="cov0" title="0">{
+                        reasons = append(reasons, "Contains Tekton resource definitions")
+                }</span>
+
+        case "validate":<span class="cov8" title="1">
+                reasons = append(reasons, "Contains Tekton resources requiring validation")</span>
+        }
+
+        // Add error/warning reasons
+        <span class="cov8" title="1">if len(detection.Errors) &gt; 0 </span><span class="cov8" title="1">{
+                reasons = append(reasons, fmt.Sprintf("Processing errors: %d", len(detection.Errors)))
+        }</span>
+        <span class="cov8" title="1">if len(detection.Warnings) &gt; 0 </span><span class="cov8" title="1">{
+                reasons = append(reasons, fmt.Sprintf("Processing warnings: %d", len(detection.Warnings)))
+        }</span>
+
+        <span class="cov8" title="1">return reasons</span>
+}
+
+// extractOwnerFromURL extracts the owner/organization from a repository URL
+func extractOwnerFromURL(repoURL string) string <span class="cov8" title="1">{
+        // Simple extraction for GitHub/GitLab URLs
+        // Examples:
+        // https://github.com/owner/repo -&gt; owner
+        // https://gitlab.com/group/project -&gt; group
+
+        // Remove protocol
+        url := repoURL
+        if idx := strings.Index(url, "://"); idx != -1 </span><span class="cov8" title="1">{
+                url = url[idx+3:]
+        }</span>
+
+        // Split by / and get the second part
+        <span class="cov8" title="1">parts := strings.Split(url, "/")
+        if len(parts) &gt;= 2 </span><span class="cov8" title="1">{
+                return parts[1]
+        }</span>
+
+        <span class="cov8" title="1">return ""</span>
+}
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package tekton
+
+import (
+        "context"
+        "fmt"
+        "strings"
+        "time"
+
+        "github.com/johnnynv/RepoSentry/internal/gitclient"
+        "github.com/johnnynv/RepoSentry/pkg/logger"
+        "github.com/johnnynv/RepoSentry/pkg/types"
+)
+
+// TektonIntegrationManager orchestrates the complete Tekton integration workflow
+type TektonIntegrationManager struct {
+        detector          *TektonDetector
+        eventGenerator    *TektonEventGenerator
+        pipelineGenerator *BootstrapPipelineGenerator
+        applier           *KubernetesApplier
+        logger            *logger.Entry
+}
+
+// NewTektonIntegrationManager creates a new integration manager
+func NewTektonIntegrationManager(gitClient gitclient.GitClient, parentLogger *logger.Entry) *TektonIntegrationManager <span class="cov8" title="1">{
+        managerLogger := parentLogger.WithFields(logger.Fields{
+                "component": "tekton-integration-manager",
+        })
+
+        return &amp;TektonIntegrationManager{
+                detector:          NewTektonDetector(gitClient, managerLogger),
+                eventGenerator:    NewTektonEventGenerator(managerLogger),
+                pipelineGenerator: NewBootstrapPipelineGenerator(managerLogger),
+                applier:           NewKubernetesApplier(managerLogger),
+                logger:            managerLogger,
+        }
+}</span>
+
+// TektonIntegrationRequest represents a request to process a repository
+type TektonIntegrationRequest struct {
+        Repository types.Repository
+        CommitSHA  string
+        Branch     string
+        Event      types.Event
+}
+
+// TektonIntegrationResult represents the result of processing
+type TektonIntegrationResult struct {
+        Request            *TektonIntegrationRequest
+        Detection          *TektonDetection
+        DetectionEvent     *types.TektonDetectionEvent
+        StandardEvent      *types.Event
+        BootstrapResources *BootstrapPipelineResources
+        ExecutionStatus    string
+        Namespace          string
+        Errors             []string
+        ProcessedAt        time.Time
+        Duration           time.Duration
+}
+
+// ProcessRepositoryChange processes a repository change and executes the full Tekton workflow
+func (tim *TektonIntegrationManager) ProcessRepositoryChange(ctx context.Context, request *TektonIntegrationRequest) (*TektonIntegrationResult, error) <span class="cov8" title="1">{
+        startTime := time.Now()
+
+        tim.logger.WithFields(logger.Fields{
+                "operation":  "process_repository_change",
+                "repository": request.Repository.Name,
+                "commit":     request.CommitSHA,
+                "branch":     request.Branch,
+        }).Info("Starting Tekton integration workflow")
+
+        result := &amp;TektonIntegrationResult{
+                Request:         request,
+                ExecutionStatus: "started",
+                Errors:          []string{},
+                ProcessedAt:     startTime,
+        }
+
+        // Step 1: Detect Tekton resources
+        detection, err := tim.detector.DetectTektonResources(ctx, request.Repository, request.CommitSHA, request.Branch)
+        if err != nil </span><span class="cov0" title="0">{
+                return tim.handleError(result, "detection_failed", fmt.Errorf("detection failed: %w", err))
+        }</span>
+        <span class="cov8" title="1">result.Detection = detection
+
+        tim.logger.WithFields(logger.Fields{
+                "estimated_action": detection.EstimatedAction,
+                "resource_count":   len(detection.Resources),
+                "has_tekton_dir":   detection.HasTektonDirectory,
+        }).Info("Detection completed")
+
+        // Step 2: Generate events
+        detectionEvent, err := tim.eventGenerator.GenerateDetectionEvent(detection)
+        if err != nil </span><span class="cov0" title="0">{
+                return tim.handleError(result, "event_generation_failed", fmt.Errorf("event generation failed: %w", err))
+        }</span>
+        <span class="cov8" title="1">result.DetectionEvent = detectionEvent
+
+        standardEvent, err := tim.eventGenerator.GenerateStandardEvent(detection)
+        if err != nil </span><span class="cov0" title="0">{
+                return tim.handleError(result, "standard_event_generation_failed", fmt.Errorf("standard event generation failed: %w", err))
+        }</span>
+        <span class="cov8" title="1">result.StandardEvent = standardEvent
+
+        // Step 3: Generate namespace and Bootstrap Pipeline resources
+        namespace := GetGeneratedNamespace(request.Repository)
+        result.Namespace = namespace
+
+        if detection.EstimatedAction == "skip" </span><span class="cov8" title="1">{
+                // For skip action, we don't need to proceed with Bootstrap Pipeline
+                result.ExecutionStatus = "skipped"
+                result.Duration = time.Since(startTime)
+
+                tim.logger.WithFields(logger.Fields{
+                        "repository": request.Repository.Name,
+                        "reason":     "no_tekton_resources",
+                }).Info("Skipping Bootstrap Pipeline execution")
+
+                return result, nil
+        }</span>
+
+        // Step 4: Generate Bootstrap Pipeline resources
+        <span class="cov8" title="1">config := &amp;BootstrapPipelineConfig{
+                Repository: request.Repository,
+                CommitSHA:  request.CommitSHA,
+                Branch:     request.Branch,
+                Detection:  detection,
+                Namespace:  namespace,
+        }
+
+        bootstrapResources, err := tim.pipelineGenerator.GenerateBootstrapResources(config)
+        if err != nil </span><span class="cov8" title="1">{
+                return tim.handleError(result, "bootstrap_generation_failed", fmt.Errorf("bootstrap generation failed: %w", err))
+        }</span>
+        <span class="cov8" title="1">result.BootstrapResources = bootstrapResources
+
+        // Step 5: Apply resources to Kubernetes
+        err = tim.applier.ApplyBootstrapResources(ctx, bootstrapResources)
+        if err != nil </span><span class="cov0" title="0">{
+                return tim.handleError(result, "kubernetes_apply_failed", fmt.Errorf("kubernetes apply failed: %w", err))
+        }</span>
+
+        <span class="cov8" title="1">result.ExecutionStatus = "applied"
+        result.Duration = time.Since(startTime)
+
+        tim.logger.WithFields(logger.Fields{
+                "repository":     request.Repository.Name,
+                "namespace":      namespace,
+                "action":         detection.EstimatedAction,
+                "duration":       result.Duration,
+                "resource_count": len(detection.Resources),
+        }).Info("Tekton integration workflow completed successfully")
+
+        return result, nil</span>
+}
+
+// GetIntegrationStatus gets the status of a Tekton integration
+func (tim *TektonIntegrationManager) GetIntegrationStatus(ctx context.Context, repository types.Repository, commitSHA string) (*TektonIntegrationStatus, error) <span class="cov8" title="1">{
+        namespace := GetGeneratedNamespace(repository)
+
+        tim.logger.WithFields(logger.Fields{
+                "operation":  "get_integration_status",
+                "repository": repository.Name,
+                "namespace":  namespace,
+                "commit":     commitSHA,
+        }).Debug("Getting integration status")
+
+        status, err := tim.applier.GetNamespaceStatus(ctx, namespace)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to get namespace status: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">integrationStatus := &amp;TektonIntegrationStatus{
+                Repository:      repository,
+                CommitSHA:       commitSHA,
+                Namespace:       namespace,
+                NamespaceStatus: status,
+                CheckedAt:       time.Now(),
+        }
+
+        return integrationStatus, nil</span>
+}
+
+// CleanupRepository cleans up resources for a repository
+func (tim *TektonIntegrationManager) CleanupRepository(ctx context.Context, repository types.Repository) error <span class="cov8" title="1">{
+        namespace := GetGeneratedNamespace(repository)
+
+        tim.logger.WithFields(logger.Fields{
+                "operation":  "cleanup_repository",
+                "repository": repository.Name,
+                "namespace":  namespace,
+        }).Info("Starting repository cleanup")
+
+        err := tim.applier.CleanupNamespace(ctx, namespace)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to cleanup namespace: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">tim.logger.WithFields(logger.Fields{
+                "repository": repository.Name,
+                "namespace":  namespace,
+        }).Info("Repository cleanup completed")
+
+        return nil</span>
+}
+
+// handleError handles errors and updates result
+func (tim *TektonIntegrationManager) handleError(result *TektonIntegrationResult, status string, err error) (*TektonIntegrationResult, error) <span class="cov8" title="1">{
+        result.ExecutionStatus = status
+        result.Errors = append(result.Errors, err.Error())
+        result.Duration = time.Since(result.ProcessedAt)
+
+        tim.logger.WithError(err).WithFields(logger.Fields{
+                "repository": result.Request.Repository.Name,
+                "status":     status,
+        }).Error("Tekton integration workflow failed")
+
+        return result, err
+}</span>
+
+// TektonIntegrationStatus represents the status of a Tekton integration
+type TektonIntegrationStatus struct {
+        Repository      types.Repository `json:"repository"`
+        CommitSHA       string           `json:"commit_sha"`
+        Namespace       string           `json:"namespace"`
+        NamespaceStatus *NamespaceStatus `json:"namespace_status"`
+        CheckedAt       time.Time        `json:"checked_at"`
+}
+
+// NamespaceStatus represents the status of a namespace
+type NamespaceStatus struct {
+        Exists        bool                    `json:"exists"`
+        Phase         string                  `json:"phase"`
+        PipelineRuns  []PipelineRunStatus     `json:"pipeline_runs"`
+        TaskRuns      []TaskRunStatus         `json:"task_runs"`
+        Resources     map[string]int          `json:"resources"` // count by resource type
+        LastActivity  *time.Time              `json:"last_activity,omitempty"`
+        ResourceUsage *NamespaceResourceUsage `json:"resource_usage,omitempty"`
+}
+
+// PipelineRunStatus represents the status of a PipelineRun
+type PipelineRunStatus struct {
+        Name           string         `json:"name"`
+        Status         string         `json:"status"` // "Running", "Succeeded", "Failed", etc.
+        StartTime      *time.Time     `json:"start_time,omitempty"`
+        CompletionTime *time.Time     `json:"completion_time,omitempty"`
+        Duration       *time.Duration `json:"duration,omitempty"`
+        Message        string         `json:"message,omitempty"`
+}
+
+// TaskRunStatus represents the status of a TaskRun
+type TaskRunStatus struct {
+        Name           string         `json:"name"`
+        Status         string         `json:"status"`
+        StartTime      *time.Time     `json:"start_time,omitempty"`
+        CompletionTime *time.Time     `json:"completion_time,omitempty"`
+        Duration       *time.Duration `json:"duration,omitempty"`
+        Message        string         `json:"message,omitempty"`
+        PipelineRun    string         `json:"pipeline_run,omitempty"` // Associated PipelineRun
+}
+
+// NamespaceResourceUsage represents resource usage in a namespace
+type NamespaceResourceUsage struct {
+        CPU    string `json:"cpu"`
+        Memory string `json:"memory"`
+        Pods   int    `json:"pods"`
+        PVCs   int    `json:"pvcs"`
+}
+
+// ValidateIntegrationRequest validates a Tekton integration request
+func (tim *TektonIntegrationManager) ValidateIntegrationRequest(request *TektonIntegrationRequest) error <span class="cov8" title="1">{
+        if request == nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("request cannot be nil")
+        }</span>
+
+        <span class="cov8" title="1">if request.Repository.Name == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("repository name is required")
+        }</span>
+
+        <span class="cov8" title="1">if request.Repository.URL == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("repository URL is required")
+        }</span>
+
+        <span class="cov8" title="1">if request.CommitSHA == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("commit SHA is required")
+        }</span>
+
+        <span class="cov8" title="1">if request.Branch == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("branch is required")
+        }</span>
+
+        // Validate repository URL format
+        <span class="cov8" title="1">if !isValidRepositoryURL(request.Repository.URL) </span><span class="cov8" title="1">{
+                return fmt.Errorf("invalid repository URL format: %s", request.Repository.URL)
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// isValidRepositoryURL validates repository URL format
+func isValidRepositoryURL(url string) bool <span class="cov8" title="1">{
+        // Basic validation - should be HTTP/HTTPS and contain proper Git hosting patterns
+        if !strings.HasPrefix(url, "http://") &amp;&amp; !strings.HasPrefix(url, "https://") </span><span class="cov8" title="1">{
+                return false
+        }</span>
+
+        // Check for common Git hosting patterns
+        <span class="cov8" title="1">gitHosts := []string{"github.com", "gitlab.com", "gitlab-"}
+        for _, host := range gitHosts </span><span class="cov8" title="1">{
+                if strings.Contains(url, host) </span><span class="cov8" title="1">{
+                        return true
+                }</span>
+        }
+
+        <span class="cov8" title="1">return false</span>
+}
+
+// GetMetrics returns integration metrics
+func (tim *TektonIntegrationManager) GetMetrics() *TektonIntegrationMetrics <span class="cov8" title="1">{
+        // TODO: Implement metrics collection
+        return &amp;TektonIntegrationMetrics{
+                TotalProcessed:        0,
+                SuccessfulRuns:        0,
+                FailedRuns:            0,
+                SkippedRuns:           0,
+                AverageProcessingTime: 0,
+                ActiveNamespaces:      0,
+        }
+}</span>
+
+// TektonIntegrationMetrics represents integration metrics
+type TektonIntegrationMetrics struct {
+        TotalProcessed        int           `json:"total_processed"`
+        SuccessfulRuns        int           `json:"successful_runs"`
+        FailedRuns            int           `json:"failed_runs"`
+        SkippedRuns           int           `json:"skipped_runs"`
+        AverageProcessingTime time.Duration `json:"average_processing_time"`
+        ActiveNamespaces      int           `json:"active_namespaces"`
+}
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">package tekton
+
+import (
+        "context"
+        "fmt"
+        "strings"
+        "time"
+
+        "github.com/johnnynv/RepoSentry/pkg/logger"
+)
+
+// KubernetesApplier handles applying Bootstrap Pipeline resources to Kubernetes
+type KubernetesApplier struct {
+        logger *logger.Entry
+        config *KubernetesApplierConfig
+}
+
+// KubernetesApplierConfig configures the Kubernetes applier
+type KubernetesApplierConfig struct {
+        // Kubernetes connection settings
+        KubeconfigPath string `json:"kubeconfig_path"`
+        Context        string `json:"context"`
+
+        // Apply settings
+        DryRun        bool          `json:"dry_run"`
+        Timeout       time.Duration `json:"timeout"`
+        RetryAttempts int           `json:"retry_attempts"`
+        RetryDelay    time.Duration `json:"retry_delay"`
+
+        // Validation settings
+        ValidateResources bool `json:"validate_resources"`
+        SkipTLSVerify     bool `json:"skip_tls_verify"`
+}
+
+// NewKubernetesApplier creates a new Kubernetes applier
+func NewKubernetesApplier(parentLogger *logger.Entry) *KubernetesApplier <span class="cov8" title="1">{
+        applierLogger := parentLogger.WithFields(logger.Fields{
+                "component": "kubernetes-applier",
+        })
+
+        return &amp;KubernetesApplier{
+                logger: applierLogger,
+                config: getDefaultApplierConfig(),
+        }
+}</span>
+
+// getDefaultApplierConfig returns default applier configuration
+func getDefaultApplierConfig() *KubernetesApplierConfig <span class="cov8" title="1">{
+        return &amp;KubernetesApplierConfig{
+                DryRun:            false,
+                Timeout:           10 * time.Minute,
+                RetryAttempts:     3,
+                RetryDelay:        5 * time.Second,
+                ValidateResources: true,
+                SkipTLSVerify:     false,
+        }
+}</span>
+
+// ApplyBootstrapResources applies Bootstrap Pipeline resources to Kubernetes
+func (ka *KubernetesApplier) ApplyBootstrapResources(ctx context.Context, resources *BootstrapPipelineResources) error <span class="cov8" title="1">{
+        ka.logger.WithFields(logger.Fields{
+                "operation": "apply_bootstrap_resources",
+                "namespace": resources.Namespace,
+        }).Info("Starting Bootstrap Pipeline resources application")
+
+        // Create namespace first
+        if err := ka.createNamespace(ctx, resources.Namespace); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to create namespace: %w", err)
+        }</span>
+
+        // Apply resources in order
+        <span class="cov8" title="1">applyOrder := []struct {
+                name     string
+                content  string
+                required bool
+        }{
+                {"ServiceAccount", resources.ServiceAccount, true},
+                {"RoleBinding", resources.RoleBinding, true},
+                {"ResourceQuota", resources.ResourceQuota, true},
+                {"NetworkPolicy", resources.NetworkPolicy, false}, // Optional if NetworkPolicy not supported
+                {"BootstrapTasks", strings.Join(resources.BootstrapTasks, "\n---\n"), true},
+                {"BootstrapPipeline", resources.BootstrapPipeline, true},
+                {"PipelineRun", resources.PipelineRun, false}, // May be empty for some modes
+        }
+
+        for _, resource := range applyOrder </span><span class="cov8" title="1">{
+                if resource.content == "" &amp;&amp; resource.required </span><span class="cov8" title="1">{
+                        return fmt.Errorf("required resource %s is empty", resource.name)
+                }</span>
+
+                <span class="cov8" title="1">if resource.content != "" </span><span class="cov8" title="1">{
+                        ka.logger.WithFields(logger.Fields{
+                                "resource_type": resource.name,
+                                "namespace":     resources.Namespace,
+                        }).Debug("Applying resource")
+
+                        if err := ka.applyYAMLContent(ctx, resource.content, resources.Namespace); err != nil </span><span class="cov8" title="1">{
+                                if resource.required </span><span class="cov8" title="1">{
+                                        return fmt.Errorf("failed to apply required resource %s: %w", resource.name, err)
+                                }</span> else<span class="cov0" title="0"> {
+                                        ka.logger.WithError(err).WithFields(logger.Fields{
+                                                "resource_type": resource.name,
+                                        }).Warn("Failed to apply optional resource")
+                                }</span>
+                        }
+                }
+        }
+
+        <span class="cov8" title="1">ka.logger.WithFields(logger.Fields{
+                "namespace": resources.Namespace,
+        }).Info("Bootstrap Pipeline resources applied successfully")
+
+        return nil</span>
+}
+
+// createNamespace creates the namespace if it doesn't exist
+func (ka *KubernetesApplier) createNamespace(ctx context.Context, namespace string) error <span class="cov8" title="1">{
+        ka.logger.WithFields(logger.Fields{
+                "operation": "create_namespace",
+                "namespace": namespace,
+        }).Debug("Creating namespace")
+
+        // Check if namespace exists
+        exists, err := ka.checkNamespaceExists(ctx, namespace)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to check namespace existence: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">if exists </span><span class="cov0" title="0">{
+                ka.logger.WithFields(logger.Fields{
+                        "namespace": namespace,
+                }).Debug("Namespace already exists")
+                return nil
+        }</span>
+
+        // Create namespace
+        <span class="cov8" title="1">namespaceYAML := fmt.Sprintf(`
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: %s
+  labels:
+    reposentry.io/managed: "true"
+    reposentry.io/type: "user-repository"
+  annotations:
+    reposentry.io/created-at: "%s"
+`, namespace, time.Now().Format(time.RFC3339))
+
+        if err := ka.applyYAMLContent(ctx, namespaceYAML, ""); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to create namespace: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">ka.logger.WithFields(logger.Fields{
+                "namespace": namespace,
+        }).Info("Namespace created successfully")
+
+        return nil</span>
+}
+
+// applyYAMLContent applies YAML content to Kubernetes
+func (ka *KubernetesApplier) applyYAMLContent(ctx context.Context, yamlContent, namespace string) error <span class="cov8" title="1">{
+        // In a real implementation, this would use kubectl or Kubernetes client-go
+        // For now, we'll simulate the apply operation
+
+        ka.logger.WithFields(logger.Fields{
+                "operation":    "apply_yaml_content",
+                "namespace":    namespace,
+                "dry_run":      ka.config.DryRun,
+                "content_size": len(yamlContent),
+        }).Debug("Applying YAML content")
+
+        if ka.config.DryRun </span><span class="cov8" title="1">{
+                ka.logger.WithFields(logger.Fields{
+                        "namespace": namespace,
+                }).Info("DRY RUN: Would apply YAML content")
+                return nil
+        }</span>
+
+        // Simulate network delay and potential failures
+        <span class="cov8" title="1">time.Sleep(100 * time.Millisecond)
+
+        // Basic validation
+        if !strings.Contains(yamlContent, "apiVersion") </span><span class="cov8" title="1">{
+                return fmt.Errorf("invalid YAML: missing apiVersion")
+        }</span>
+
+        <span class="cov8" title="1">if !strings.Contains(yamlContent, "kind") </span><span class="cov8" title="1">{
+                return fmt.Errorf("invalid YAML: missing kind")
+        }</span>
+
+        // TODO: Replace with actual kubectl apply or client-go implementation
+        // Example commands that would be executed:
+        // kubectl apply -f - --namespace=&lt;namespace&gt; &lt; yamlContent
+        // Or use client-go to apply resources programmatically
+
+        <span class="cov8" title="1">ka.logger.WithFields(logger.Fields{
+                "namespace": namespace,
+        }).Debug("YAML content applied successfully (simulated)")
+
+        return nil</span>
+}
+
+// checkNamespaceExists checks if a namespace exists
+func (ka *KubernetesApplier) checkNamespaceExists(ctx context.Context, namespace string) (bool, error) <span class="cov8" title="1">{
+        // TODO: Replace with actual kubectl or client-go implementation
+        // kubectl get namespace &lt;namespace&gt; --ignore-not-found=true
+
+        ka.logger.WithFields(logger.Fields{
+                "operation": "check_namespace_exists",
+                "namespace": namespace,
+        }).Debug("Checking namespace existence")
+
+        // Simulate check - in reality this would query Kubernetes API
+        // For now, assume namespace doesn't exist
+        return false, nil
+}</span>
+
+// GetNamespaceStatus gets the status of a namespace
+func (ka *KubernetesApplier) GetNamespaceStatus(ctx context.Context, namespace string) (*NamespaceStatus, error) <span class="cov8" title="1">{
+        ka.logger.WithFields(logger.Fields{
+                "operation": "get_namespace_status",
+                "namespace": namespace,
+        }).Debug("Getting namespace status")
+
+        // Check if namespace exists
+        exists, err := ka.checkNamespaceExists(ctx, namespace)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to check namespace: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">status := &amp;NamespaceStatus{
+                Exists:    exists,
+                Phase:     "Active",
+                Resources: make(map[string]int),
+        }
+
+        if !exists </span><span class="cov8" title="1">{
+                status.Phase = "NotFound"
+                return status, nil
+        }</span>
+
+        // TODO: Replace with actual Kubernetes API calls
+        // Get PipelineRuns
+        <span class="cov0" title="0">pipelineRuns, err := ka.getPipelineRuns(ctx, namespace)
+        if err != nil </span><span class="cov0" title="0">{
+                ka.logger.WithError(err).Warn("Failed to get PipelineRuns")
+        }</span> else<span class="cov0" title="0"> {
+                status.PipelineRuns = pipelineRuns
+                status.Resources["PipelineRun"] = len(pipelineRuns)
+        }</span>
+
+        // Get TaskRuns
+        <span class="cov0" title="0">taskRuns, err := ka.getTaskRuns(ctx, namespace)
+        if err != nil </span><span class="cov0" title="0">{
+                ka.logger.WithError(err).Warn("Failed to get TaskRuns")
+        }</span> else<span class="cov0" title="0"> {
+                status.TaskRuns = taskRuns
+                status.Resources["TaskRun"] = len(taskRuns)
+        }</span>
+
+        // Get resource usage
+        <span class="cov0" title="0">resourceUsage, err := ka.getResourceUsage(ctx, namespace)
+        if err != nil </span><span class="cov0" title="0">{
+                ka.logger.WithError(err).Warn("Failed to get resource usage")
+        }</span> else<span class="cov0" title="0"> {
+                status.ResourceUsage = resourceUsage
+        }</span>
+
+        // Determine last activity
+        <span class="cov0" title="0">lastActivity := ka.getLastActivity(status.PipelineRuns, status.TaskRuns)
+        if lastActivity != nil </span><span class="cov0" title="0">{
+                status.LastActivity = lastActivity
+        }</span>
+
+        <span class="cov0" title="0">return status, nil</span>
+}
+
+// getPipelineRuns gets PipelineRuns in a namespace
+func (ka *KubernetesApplier) getPipelineRuns(ctx context.Context, namespace string) ([]PipelineRunStatus, error) <span class="cov8" title="1">{
+        // TODO: Replace with actual kubectl or client-go implementation
+        // kubectl get pipelineruns -n &lt;namespace&gt; -o json
+
+        // Simulate some PipelineRuns
+        now := time.Now()
+        return []PipelineRunStatus{
+                {
+                        Name:           "reposentry-bootstrap-apply-abc123",
+                        Status:         "Running",
+                        StartTime:      &amp;now,
+                        CompletionTime: nil,
+                        Message:        "Pipeline is running",
+                },
+        }, nil
+}</span>
+
+// getTaskRuns gets TaskRuns in a namespace
+func (ka *KubernetesApplier) getTaskRuns(ctx context.Context, namespace string) ([]TaskRunStatus, error) <span class="cov8" title="1">{
+        // TODO: Replace with actual kubectl or client-go implementation
+        // kubectl get taskruns -n &lt;namespace&gt; -o json
+
+        // Simulate some TaskRuns
+        now := time.Now()
+        duration := 2 * time.Minute
+        return []TaskRunStatus{
+                {
+                        Name:           "clone-repository-abc123",
+                        Status:         "Succeeded",
+                        StartTime:      &amp;now,
+                        CompletionTime: &amp;now,
+                        Duration:       &amp;duration,
+                        Message:        "Task completed successfully",
+                        PipelineRun:    "reposentry-bootstrap-apply-abc123",
+                },
+        }, nil
+}</span>
+
+// getResourceUsage gets resource usage in a namespace
+func (ka *KubernetesApplier) getResourceUsage(ctx context.Context, namespace string) (*NamespaceResourceUsage, error) <span class="cov8" title="1">{
+        // TODO: Replace with actual kubectl or client-go implementation
+        // kubectl top pods -n &lt;namespace&gt;
+
+        // Simulate resource usage
+        return &amp;NamespaceResourceUsage{
+                CPU:    "100m",
+                Memory: "256Mi",
+                Pods:   2,
+                PVCs:   1,
+        }, nil
+}</span>
+
+// getLastActivity determines the last activity time from runs
+func (ka *KubernetesApplier) getLastActivity(pipelineRuns []PipelineRunStatus, taskRuns []TaskRunStatus) *time.Time <span class="cov8" title="1">{
+        var lastActivity *time.Time
+
+        // Check PipelineRuns
+        for _, pr := range pipelineRuns </span><span class="cov8" title="1">{
+                if pr.CompletionTime != nil &amp;&amp; (lastActivity == nil || pr.CompletionTime.After(*lastActivity)) </span><span class="cov8" title="1">{
+                        lastActivity = pr.CompletionTime
+                }</span> else<span class="cov8" title="1"> if pr.StartTime != nil &amp;&amp; (lastActivity == nil || pr.StartTime.After(*lastActivity)) </span><span class="cov8" title="1">{
+                        lastActivity = pr.StartTime
+                }</span>
+        }
+
+        // Check TaskRuns
+        <span class="cov8" title="1">for _, tr := range taskRuns </span><span class="cov8" title="1">{
+                if tr.CompletionTime != nil &amp;&amp; (lastActivity == nil || tr.CompletionTime.After(*lastActivity)) </span><span class="cov8" title="1">{
+                        lastActivity = tr.CompletionTime
+                }</span> else<span class="cov8" title="1"> if tr.StartTime != nil &amp;&amp; (lastActivity == nil || tr.StartTime.After(*lastActivity)) </span><span class="cov0" title="0">{
+                        lastActivity = tr.StartTime
+                }</span>
+        }
+
+        <span class="cov8" title="1">return lastActivity</span>
+}
+
+// CleanupNamespace cleans up a namespace and all its resources
+func (ka *KubernetesApplier) CleanupNamespace(ctx context.Context, namespace string) error <span class="cov8" title="1">{
+        ka.logger.WithFields(logger.Fields{
+                "operation": "cleanup_namespace",
+                "namespace": namespace,
+        }).Info("Starting namespace cleanup")
+
+        // Check if namespace exists
+        exists, err := ka.checkNamespaceExists(ctx, namespace)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to check namespace: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">if !exists </span><span class="cov8" title="1">{
+                ka.logger.WithFields(logger.Fields{
+                        "namespace": namespace,
+                }).Info("Namespace does not exist, nothing to cleanup")
+                return nil
+        }</span>
+
+        // TODO: Replace with actual kubectl or client-go implementation
+        // kubectl delete namespace &lt;namespace&gt;
+
+        <span class="cov0" title="0">if ka.config.DryRun </span><span class="cov0" title="0">{
+                ka.logger.WithFields(logger.Fields{
+                        "namespace": namespace,
+                }).Info("DRY RUN: Would delete namespace")
+                return nil
+        }</span>
+
+        // Simulate cleanup
+        <span class="cov0" title="0">time.Sleep(2 * time.Second)
+
+        ka.logger.WithFields(logger.Fields{
+                "namespace": namespace,
+        }).Info("Namespace cleanup completed (simulated)")
+
+        return nil</span>
+}
+
+// SetConfig updates the applier configuration
+func (ka *KubernetesApplier) SetConfig(config *KubernetesApplierConfig) <span class="cov8" title="1">{
+        ka.config = config
+}</span>
+
+// GetConfig returns the current applier configuration
+func (ka *KubernetesApplier) GetConfig() *KubernetesApplierConfig <span class="cov8" title="1">{
+        return ka.config
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

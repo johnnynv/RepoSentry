@@ -7,12 +7,13 @@ RepoSentry 的 Tekton 集成功能允许您在自己的代码仓库中定义 Tek
 ### 🔧 当前可用功能
 - ✅ **自动检测**：监控您仓库中的 `.tekton/` 目录变化
 - ✅ **透明执行**：代码提交后自动执行您的 Tekton 流水线
-- ✅ **配置化路径**：管理员可配置和控制检测路径
-- ✅ **智能发现**：自动发现您仓库中的 Tekton 资源并提供建议
 - ✅ **安全隔离**：为您的仓库提供独立的执行环境
+- ✅ **预部署基础设施**：基于稳定的预部署 Bootstrap Pipeline
 
 ### 📋 长远计划功能
-- 📋 **企业治理**：分层配置管理和策略治理（暂时不可用）
+- 📋 **配置化路径**：管理员可配置和控制检测路径（长期计划）
+- 📋 **智能发现**：自动发现您仓库中的 Tekton 资源并提供建议（长期计划）
+- 📋 **企业治理**：分层配置管理和策略治理（长期计划）
 
 ## 🚀 快速开始
 
@@ -157,14 +158,16 @@ git push origin main
 
 ```bash
 # 查看您的命名空间中的 PipelineRun (使用哈希命名空间)
-kubectl get pipelineruns -n reposentry-user-{namespace-hash}
+kubectl get pipelineruns -n reposentry-user-repo-{namespace-hash}
 
 # 查看 Pipeline 执行日志
-kubectl logs -f pipelinerun/{pipelinerun-name} -n reposentry-user-{namespace-hash}
+kubectl logs -f pipelinerun/{pipelinerun-name} -n reposentry-user-repo-{namespace-hash}
 
 # 注意：namespace-hash 是根据您的仓库信息生成的哈希值
 # 可以通过以下命令查询您的命名空间：
 kubectl get namespaces -l reposentry.dev/repository={your-repo}
+
+# 命名空间示例: reposentry-user-repo-abc123def456
 ```
 
 ## 📁 目录结构建议
@@ -575,16 +578,16 @@ spec:
 
 ```bash
 # 列出您的命名空间中的所有 PipelineRun
-kubectl get pipelineruns -n reposentry-user-{namespace-hash}
+kubectl get pipelineruns -n reposentry-user-repo-{namespace-hash}
 
 # 查看特定 PipelineRun 的详细信息
-kubectl describe pipelinerun {pipelinerun-name} -n reposentry-user-{namespace-hash}
+kubectl describe pipelinerun {pipelinerun-name} -n reposentry-user-repo-{namespace-hash}
 
 # 查看实时日志
-kubectl logs -f pipelinerun/{pipelinerun-name} -n reposentry-user-{namespace-hash}
+kubectl logs -f pipelinerun/{pipelinerun-name} -n reposentry-user-repo-{namespace-hash}
 
 # 查看特定任务的日志
-kubectl logs -f pipelinerun/{pipelinerun-name} -c step-{step-name} -n reposentry-user-{namespace-hash}
+kubectl logs -f pipelinerun/{pipelinerun-name} -c step-{step-name} -n reposentry-user-repo-{namespace-hash}
 ```
 
 ### 常见问题解决
