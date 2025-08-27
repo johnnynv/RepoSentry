@@ -1,0 +1,194 @@
+# RepoSentry Bootstrap Pipeline EventListener System
+# Contains: TriggerBinding, TriggerTemplate, EventListener for Bootstrap Pipeline
+# Version: v3.0 (Bootstrap Pipeline Architecture)
+
+---
+# RepoSentry Bootstrap TriggerBinding - Repository Information
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: reposentry-bootstrap-binding
+  namespace: reposentry-system
+  labels:
+    app.kubernetes.io/name: reposentry
+    app.kubernetes.io/component: triggerbinding
+    app.kubernetes.io/version: "3.0"
+    reposentry.io/type: "bootstrap"
+  annotations:
+    description: "RepoSentry Bootstrap Pipeline TriggerBinding"
+    reposentry.io/architecture: "bootstrap-pipeline"
+spec:
+  params:
+    # Core repository parameters
+    - name: repo-url
+      value: $(body.repository)
+    - name: repo-branch
+      value: $(body.branch)
+    - name: commit-sha
+      value: $(body.commit_sha)
+    - name: trigger-id
+      value: $(body.id)
+    - name: event-type
+      value: $(body.type)
+    # Computed parameters for Bootstrap Pipeline
+    - name: tekton-path
+      value: ".tekton"
+
+---
+# RepoSentry Bootstrap TriggerTemplate - Bootstrap Pipeline Trigger
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: reposentry-bootstrap-template
+  namespace: reposentry-system
+  labels:
+    app.kubernetes.io/name: reposentry
+    app.kubernetes.io/component: triggertemplate
+    app.kubernetes.io/version: "3.0"
+    reposentry.io/type: "bootstrap"
+  annotations:
+    description: "RepoSentry Bootstrap Pipeline TriggerTemplate"
+    reposentry.io/architecture: "bootstrap-pipeline"
+spec:
+  params:
+    - name: repo-url
+      description: "Repository URL to process"
+    - name: repo-branch
+      description: "Repository branch name"
+      default: "main"
+    - name: commit-sha
+      description: "Git commit SHA"
+    - name: trigger-id
+      description: "Unique trigger identifier"
+    - name: event-type
+      description: "Event type (branch_updated/branch_created)"
+    - name: tekton-path
+      description: "Path to Tekton resources"
+      default: ".tekton"
+      
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: "reposentry-bootstrap-run-"
+        namespace: reposentry-system
+        labels:
+          # RepoSentry Bootstrap labels
+          reposentry.io/trigger-id: $(tt.params.trigger-id)
+          reposentry.io/event-type: $(tt.params.event-type)
+          reposentry.io/type: "bootstrap"
+          reposentry.io/architecture: "bootstrap-pipeline"
+          
+          # Tekton labels
+          tekton.dev/pipeline: reposentry-bootstrap-pipeline
+          
+          # Application labels
+          app.kubernetes.io/name: reposentry
+          app.kubernetes.io/component: pipelinerun
+          app.kubernetes.io/managed-by: reposentry-trigger
+          
+        annotations:
+          # Repository information
+          reposentry.io/repository-url: $(tt.params.repo-url)
+          reposentry.io/branch: $(tt.params.repo-branch)
+          reposentry.io/commit-sha: $(tt.params.commit-sha)
+          reposentry.io/tekton-path: $(tt.params.tekton-path)
+          description: "Bootstrap Pipeline triggered by RepoSentry for repository change"
+          
+      spec:
+        pipelineRef:
+          name: reposentry-bootstrap-pipeline
+        params:
+          - name: repo-url
+            value: $(tt.params.repo-url)
+          - name: repo-branch
+            value: $(tt.params.repo-branch)
+          - name: commit-sha
+            value: $(tt.params.commit-sha)
+          - name: target-namespace
+            value: "auto-compute"  # Will be computed by Bootstrap Pipeline
+          - name: tekton-path
+            value: $(tt.params.tekton-path)
+        workspaces:
+          - name: source-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: tekton-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 500Mi
+        serviceAccountName: reposentry-bootstrap-sa
+
+---
+# RepoSentry Bootstrap EventListener - Bootstrap Pipeline Processing
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: reposentry-bootstrap-eventlistener
+  namespace: reposentry-system
+  labels:
+    app.kubernetes.io/name: reposentry
+    app.kubernetes.io/component: eventlistener
+    app.kubernetes.io/version: "3.0"
+    reposentry.io/type: "bootstrap"
+  annotations:
+    description: "RepoSentry Bootstrap Pipeline EventListener"
+    reposentry.io/architecture: "bootstrap-pipeline"
+    reposentry.io/docs: "docs/zh/bootstrap-pipeline-architecture.md"
+spec:
+  serviceAccountName: reposentry-bootstrap-sa
+  triggers:
+    - name: reposentry-bootstrap-trigger
+      bindings:
+        - ref: reposentry-bootstrap-binding
+      template:
+        ref: reposentry-bootstrap-template
+      interceptors:
+        - name: "filter-tekton-events"
+          ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: "body.type in ['tekton_detected'] && has(body.repository) && has(body.commit_sha)"
+            - name: "overlays"
+              value:
+                - key: "repository"
+                  expression: "body.metadata.repository_url"
+                - key: "branch"
+                  expression: "body.branch"
+                - key: "commit_sha"
+                  expression: "body.commit_sha"
+
+---
+# Bootstrap EventListener Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: el-reposentry-bootstrap-eventlistener
+  namespace: reposentry-system
+  labels:
+    app.kubernetes.io/name: reposentry
+    app.kubernetes.io/component: eventlistener-service
+    app.kubernetes.io/version: "3.0"
+    reposentry.io/type: "bootstrap"
+spec:
+  ports:
+    - name: http-listener
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/managed-by: EventListener
+    app.kubernetes.io/part-of: Triggers
+    eventlistener: reposentry-bootstrap-eventlistener
+  type: ClusterIP
+

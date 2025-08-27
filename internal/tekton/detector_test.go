@@ -528,3 +528,283 @@ func TestDetectorConfig(t *testing.T) {
 		t.Errorf("Expected max file size 500KB, got %d", newConfig.MaxFileSize)
 	}
 }
+
+func TestValidateTask(t *testing.T) {
+	parentLogger := createTestLogger()
+	gitClient := &MockGitClient{}
+	detector := NewTektonDetector(gitClient, parentLogger)
+
+	tests := []struct {
+		name        string
+		resource    *TektonResource
+		expectError bool
+		errorText   string
+	}{
+		{
+			name: "Valid task with steps",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "Task",
+				Name:       "test-task",
+				Spec: map[string]interface{}{
+					"steps": []interface{}{
+						map[string]interface{}{
+							"name":  "echo",
+							"image": "ubuntu",
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Task with no spec",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "Task",
+				Name:       "test-task",
+				Spec:       nil,
+			},
+			expectError: true,
+			errorText:   "task spec is required",
+		},
+		{
+			name: "Task with empty steps array",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "Task",
+				Name:       "test-task",
+				Spec: map[string]interface{}{
+					"steps": []interface{}{},
+				},
+			},
+			expectError: true,
+			errorText:   "task must have at least one step",
+		},
+		{
+			name: "Task without steps",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "Task",
+				Name:       "test-task",
+				Spec: map[string]interface{}{
+					"description": "A task without steps",
+				},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := detector.validateTask(tt.resource)
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				} else if !strings.Contains(err.Error(), tt.errorText) {
+					t.Errorf("Expected error containing %q, got: %v", tt.errorText, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error but got: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestValidatePipelineRun(t *testing.T) {
+	parentLogger := createTestLogger()
+	gitClient := &MockGitClient{}
+	detector := NewTektonDetector(gitClient, parentLogger)
+
+	tests := []struct {
+		name        string
+		resource    *TektonResource
+		expectError bool
+		errorText   string
+	}{
+		{
+			name: "Valid PipelineRun with pipelineRef",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "PipelineRun",
+				Name:       "test-pipeline-run",
+				Spec: map[string]interface{}{
+					"pipelineRef": map[string]interface{}{
+						"name": "test-pipeline",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Valid PipelineRun with pipelineSpec",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "PipelineRun",
+				Name:       "test-pipeline-run",
+				Spec: map[string]interface{}{
+					"pipelineSpec": map[string]interface{}{
+						"tasks": []interface{}{},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "PipelineRun with no spec",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "PipelineRun",
+				Name:       "test-pipeline-run",
+				Spec:       nil,
+			},
+			expectError: true,
+			errorText:   "pipelineRun spec is required",
+		},
+		{
+			name: "PipelineRun with empty pipelineRef name",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "PipelineRun",
+				Name:       "test-pipeline-run",
+				Spec: map[string]interface{}{
+					"pipelineRef": map[string]interface{}{
+						"name": "",
+					},
+				},
+			},
+			expectError: true,
+			errorText:   "pipelineRun must reference a pipeline by name",
+		},
+		{
+			name: "PipelineRun without pipelineRef or pipelineSpec",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "PipelineRun",
+				Name:       "test-pipeline-run",
+				Spec: map[string]interface{}{
+					"params": []interface{}{},
+				},
+			},
+			expectError: true,
+			errorText:   "pipelineRun must have either pipelineRef or pipelineSpec",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := detector.validatePipelineRun(tt.resource)
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				} else if !strings.Contains(err.Error(), tt.errorText) {
+					t.Errorf("Expected error containing %q, got: %v", tt.errorText, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error but got: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateTaskRun(t *testing.T) {
+	parentLogger := createTestLogger()
+	gitClient := &MockGitClient{}
+	detector := NewTektonDetector(gitClient, parentLogger)
+
+	tests := []struct {
+		name        string
+		resource    *TektonResource
+		expectError bool
+		errorText   string
+	}{
+		{
+			name: "Valid TaskRun with taskRef",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "TaskRun",
+				Name:       "test-task-run",
+				Spec: map[string]interface{}{
+					"taskRef": map[string]interface{}{
+						"name": "test-task",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Valid TaskRun with taskSpec",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "TaskRun",
+				Name:       "test-task-run",
+				Spec: map[string]interface{}{
+					"taskSpec": map[string]interface{}{
+						"steps": []interface{}{},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "TaskRun with no spec",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "TaskRun",
+				Name:       "test-task-run",
+				Spec:       nil,
+			},
+			expectError: true,
+			errorText:   "taskRun spec is required",
+		},
+		{
+			name: "TaskRun with empty taskRef name",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "TaskRun",
+				Name:       "test-task-run",
+				Spec: map[string]interface{}{
+					"taskRef": map[string]interface{}{
+						"name": "",
+					},
+				},
+			},
+			expectError: true,
+			errorText:   "taskRun must reference a task by name",
+		},
+		{
+			name: "TaskRun without taskRef or taskSpec",
+			resource: &TektonResource{
+				APIVersion: "tekton.dev/v1beta1",
+				Kind:       "TaskRun",
+				Name:       "test-task-run",
+				Spec: map[string]interface{}{
+					"params": []interface{}{},
+				},
+			},
+			expectError: true,
+			errorText:   "taskRun must have either taskRef or taskSpec",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := detector.validateTaskRun(tt.resource)
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				} else if !strings.Contains(err.Error(), tt.errorText) {
+					t.Errorf("Expected error containing %q, got: %v", tt.errorText, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error but got: %v", err)
+				}
+			}
+		})
+	}
+}

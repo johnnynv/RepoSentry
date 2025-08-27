@@ -61,11 +61,14 @@ type SQLiteConfig struct {
 
 // TektonConfig represents Tekton EventListener configuration
 type TektonConfig struct {
-	EventListenerURL string            `yaml:"event_listener_url" json:"event_listener_url"`
-	Timeout          time.Duration     `yaml:"timeout" json:"timeout"`
-	RetryAttempts    int               `yaml:"retry_attempts" json:"retry_attempts"`
-	RetryBackoff     time.Duration     `yaml:"retry_backoff" json:"retry_backoff"`
-	Headers          map[string]string `yaml:"headers" json:"headers"`
+	Enabled           bool              `yaml:"enabled" json:"enabled"`
+	EventListenerURL  string            `yaml:"event_listener_url" json:"event_listener_url"`
+	SystemNamespace   string            `yaml:"system_namespace" json:"system_namespace"`
+	BootstrapPipeline string            `yaml:"bootstrap_pipeline" json:"bootstrap_pipeline"`
+	Timeout           time.Duration     `yaml:"timeout" json:"timeout"`
+	RetryAttempts     int               `yaml:"retry_attempts" json:"retry_attempts"`
+	RetryBackoff      time.Duration     `yaml:"retry_backoff" json:"retry_backoff"`
+	Headers           map[string]string `yaml:"headers" json:"headers"`
 }
 
 // RateLimitConfig represents rate limiting configuration for different providers

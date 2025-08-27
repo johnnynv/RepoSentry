@@ -143,22 +143,51 @@ func (v *Validator) validateSQLite(sqlite *types.SQLiteConfig) {
 
 // validateTekton validates Tekton configuration
 func (v *Validator) validateTekton(tekton *types.TektonConfig) {
-	if tekton.EventListenerURL == "" {
-		v.addError("tekton.event_listener_url", tekton.EventListenerURL, "Tekton EventListener URL is required")
-	} else {
-		if _, err := url.Parse(tekton.EventListenerURL); err != nil {
-			v.addError("tekton.event_listener_url", tekton.EventListenerURL, "invalid URL format")
+	// If Tekton is not enabled, skip validation
+	if !tekton.Enabled {
+		return
+	}
+
+	// Validate EventListenerURL if provided (optional for new architecture)
+	if tekton.EventListenerURL != "" {
+		cleanURL := strings.TrimSpace(tekton.EventListenerURL)
+		if _, err := url.Parse(cleanURL); err != nil {
+			v.addError("tekton.event_listener_url", tekton.EventListenerURL, "invalid EventListener URL format")
+		} else {
+			// Check if URL uses valid scheme
+			parsedURL, _ := url.Parse(cleanURL)
+			if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+				v.addError("tekton.event_listener_url", tekton.EventListenerURL, "EventListener URL must use http or https scheme")
+			}
 		}
 	}
 
+	// Validate SystemNamespace if provided
+	if tekton.SystemNamespace != "" {
+		// Kubernetes namespace naming rules
+		if !v.isValidKubernetesName(tekton.SystemNamespace) {
+			v.addError("tekton.system_namespace", tekton.SystemNamespace, "invalid Kubernetes namespace name")
+		}
+	}
+
+	// Validate BootstrapPipeline if provided
+	if tekton.BootstrapPipeline != "" {
+		if !v.isValidKubernetesName(tekton.BootstrapPipeline) {
+			v.addError("tekton.bootstrap_pipeline", tekton.BootstrapPipeline, "invalid Kubernetes resource name")
+		}
+	}
+
+	// Validate timeout
 	if tekton.Timeout <= 0 {
 		v.addError("tekton.timeout", tekton.Timeout.String(), "timeout must be positive")
 	}
 
+	// Validate retry attempts
 	if tekton.RetryAttempts < 0 {
 		v.addError("tekton.retry_attempts", fmt.Sprintf("%d", tekton.RetryAttempts), "retry attempts cannot be negative")
 	}
 
+	// Validate retry backoff
 	if tekton.RetryBackoff <= 0 {
 		v.addError("tekton.retry_backoff", tekton.RetryBackoff.String(), "retry backoff must be positive")
 	}
@@ -255,6 +284,19 @@ func (v *Validator) validateRepositories(repositories []types.Repository) {
 			}
 		}
 	}
+}
+
+// isValidKubernetesName validates Kubernetes resource names
+func (v *Validator) isValidKubernetesName(name string) bool {
+	if name == "" {
+		return false
+	}
+
+	// Kubernetes naming rules: lowercase alphanumeric characters or '-'
+	// Must start and end with alphanumeric character
+	// Max length 253 characters
+	matched, _ := regexp.MatchString(`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`, name)
+	return matched && len(name) <= 253
 }
 
 // validateURL validates repository URL format and security requirements

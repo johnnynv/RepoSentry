@@ -1,45 +1,71 @@
-# RepoSentry Compatible TriggerBinding
-# 支持RepoSentry实际发送的payload格式
+# RepoSentry Compatible TriggerBinding for Bootstrap Pipeline
+# 支持RepoSentry实际发送的payload格式 - 适配Bootstrap Pipeline
 apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerBinding
 metadata:
-  name: reposentry-compatible-binding
-  namespace: default
+  name: reposentry-compatible-bootstrap-binding
+  namespace: reposentry-system
+  labels:
+    app.kubernetes.io/name: reposentry
+    app.kubernetes.io/component: triggerbinding
+    app.kubernetes.io/version: "3.0"
+    reposentry.io/type: "bootstrap-compatible"
+  annotations:
+    description: "RepoSentry Compatible TriggerBinding adapted for Bootstrap Pipeline"
+    reposentry.io/architecture: "bootstrap-pipeline"
 spec:
   params:
-    # 直接从顶级metadata字段读取
+    # Map RepoSentry CloudEvents to Bootstrap Pipeline parameters
+    - name: repo-url
+      value: $(body.metadata.repository_url)
+    - name: repo-branch
+      value: $(body.metadata.branch)
+    - name: commit-sha
+      value: $(body.metadata.commit_sha)
+    - name: trigger-id
+      value: $(body.metadata.trigger_id)
+    - name: event-type
+      value: $(body.metadata.event_type)
+    - name: tekton-path
+      value: ".tekton"
+    # Legacy fields for backwards compatibility
     - name: provider
       value: $(body.metadata.provider)
     - name: organization
       value: $(body.metadata.organization)
     - name: repository-name
       value: $(body.metadata.repository_name)
-    - name: branch
-      value: $(body.metadata.branch)
-    - name: commit-sha
-      value: $(body.metadata.commit_sha)
-    - name: short-sha
-      value: $(body.metadata.short_sha)
-    - name: event-type
-      value: $(body.metadata.event_type)
-    - name: repository-id
-      value: $(body.metadata.repository_id)
-    - name: trigger-source
-      value: $(body.metadata.trigger_source)
-    - name: trigger-id
-      value: $(body.metadata.trigger_id)
 ---
-# 更新EventListener使用兼容的TriggerBinding
+# 更新EventListener使用兼容的TriggerBinding - Bootstrap Pipeline
 apiVersion: triggers.tekton.dev/v1beta1
 kind: EventListener
 metadata:
-  name: reposentry-webhook-handler
-  namespace: default
+  name: reposentry-bootstrap-webhook-handler
+  namespace: reposentry-system
+  labels:
+    app.kubernetes.io/name: reposentry
+    app.kubernetes.io/component: eventlistener
+    app.kubernetes.io/version: "3.0"
+    reposentry.io/type: "bootstrap-compatible"
+  annotations:
+    description: "RepoSentry Compatible EventListener for Bootstrap Pipeline"
+    reposentry.io/architecture: "bootstrap-pipeline"
 spec:
-  serviceAccountName: tekton-triggers-serviceaccount
+  serviceAccountName: reposentry-bootstrap-sa
   triggers:
-    - name: reposentry-pipeline-trigger
+    - name: reposentry-bootstrap-compatible-trigger
       bindings:
-        - ref: reposentry-compatible-binding
+        - ref: reposentry-compatible-bootstrap-binding
       template:
-        ref: reposentry-advanced-template
+        ref: reposentry-bootstrap-template
+      interceptors:
+        - name: "filter-reposentry-events"
+          ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: "has(body.metadata) && has(body.metadata.repository_url) && has(body.metadata.commit_sha)"
+            - name: "overlays"
+              value:
+                - key: "processed_by"
+                  expression: "'reposentry-bootstrap-compatible'"

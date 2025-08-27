@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
 )
 
-// BootstrapPipelineGenerator generates Bootstrap Pipeline YAML based on detection results
+// BootstrapPipelineGenerator generates PipelineRun YAML for the pre-deployed Bootstrap Pipeline
+// Note: The actual Bootstrap Pipeline and Tasks are deployed statically using StaticBootstrapGenerator
 type BootstrapPipelineGenerator struct {
 	logger *logger.Entry
 }
@@ -51,35 +53,25 @@ type BootstrapPipelineConfig struct {
 	NetworkPolicy   string
 }
 
-// BootstrapPipelineResources contains all generated Tekton resources
+// BootstrapPipelineResources contains generated PipelineRun for triggering the pre-deployed Bootstrap Pipeline
 type BootstrapPipelineResources struct {
-	// Core bootstrap resources
-	BootstrapPipeline string
-	BootstrapTasks    []string
-
-	// Supporting resources
-	ServiceAccount string
-	RoleBinding    string
-	NetworkPolicy  string
-	ResourceQuota  string
-
-	// Execution resources
+	// Execution resources (only PipelineRun is generated at runtime)
 	PipelineRun string
 
 	// Generated metadata
-	GeneratedAt string
-	Namespace   string
-	Config      *BootstrapPipelineConfig
+	GeneratedAt     string
+	TargetNamespace string
+	Config          *BootstrapPipelineConfig
 }
 
-// GenerateBootstrapResources generates all necessary Bootstrap Pipeline resources
-func (bpg *BootstrapPipelineGenerator) GenerateBootstrapResources(config *BootstrapPipelineConfig) (*BootstrapPipelineResources, error) {
+// GeneratePipelineRun generates a PipelineRun to trigger the pre-deployed Bootstrap Pipeline
+func (bpg *BootstrapPipelineGenerator) GeneratePipelineRun(config *BootstrapPipelineConfig) (*BootstrapPipelineResources, error) {
 	bpg.logger.WithFields(logger.Fields{
-		"operation":        "generate_bootstrap_resources",
+		"operation":        "generate_pipeline_run",
 		"repository":       config.Repository.Name,
 		"estimated_action": config.Detection.EstimatedAction,
-		"namespace":        config.Namespace,
-	}).Info("Generating Bootstrap Pipeline resources")
+		"target_namespace": config.Namespace,
+	}).Info("Generating PipelineRun for pre-deployed Bootstrap Pipeline")
 
 	// Set defaults if not provided
 	if err := bpg.setDefaults(config); err != nil {
@@ -87,25 +79,24 @@ func (bpg *BootstrapPipelineGenerator) GenerateBootstrapResources(config *Bootst
 	}
 
 	resources := &BootstrapPipelineResources{
-		Namespace:      config.Namespace,
-		Config:         config,
-		GeneratedAt:    "2025-08-26T08:00:00Z", // TODO: Use actual timestamp
-		BootstrapTasks: []string{},
+		TargetNamespace: config.Namespace,
+		Config:          config,
+		GeneratedAt:     fmt.Sprintf("%d", time.Now().Unix()),
 	}
 
-	// Generate based on estimated action
-	switch config.Detection.EstimatedAction {
-	case "apply":
-		return bpg.generateApplyResources(config, resources)
-	case "trigger":
-		return bpg.generateTriggerResources(config, resources)
-	case "validate":
-		return bpg.generateValidateResources(config, resources)
-	case "skip":
-		return bpg.generateSkipResources(config, resources)
-	default:
-		return nil, fmt.Errorf("unsupported estimated action: %s", config.Detection.EstimatedAction)
+	// Generate PipelineRun for the static Bootstrap Pipeline
+	pipelineRun, err := bpg.generateBootstrapPipelineRun(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate PipelineRun: %w", err)
 	}
+	resources.PipelineRun = pipelineRun
+
+	bpg.logger.WithFields(logger.Fields{
+		"pipeline_run_generated": true,
+		"target_namespace":       config.Namespace,
+	}).Info("PipelineRun generated successfully")
+
+	return resources, nil
 }
 
 // setDefaults sets default values for configuration
@@ -142,356 +133,62 @@ func (bpg *BootstrapPipelineGenerator) setDefaults(config *BootstrapPipelineConf
 	return nil
 }
 
-// generateApplyResources generates resources for "apply" action
-func (bpg *BootstrapPipelineGenerator) generateApplyResources(config *BootstrapPipelineConfig, resources *BootstrapPipelineResources) (*BootstrapPipelineResources, error) {
-	bpg.logger.Info("Generating apply-mode Bootstrap Pipeline")
-
-	// Generate bootstrap pipeline for applying user resources
-	pipelineTemplate := `
-apiVersion: tekton.dev/v1beta1
-kind: Pipeline
+// generateBootstrapPipelineRun generates a PipelineRun to trigger the static Bootstrap Pipeline
+func (bpg *BootstrapPipelineGenerator) generateBootstrapPipelineRun(config *BootstrapPipelineConfig) (string, error) {
+	pipelineRunTemplate := `apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
 metadata:
-  name: reposentry-bootstrap-apply
-  namespace: {{.Namespace}}
+  generateName: reposentry-bootstrap-run-
+  namespace: reposentry-system
   labels:
-    reposentry.io/type: "bootstrap"
-    reposentry.io/action: "apply"
     reposentry.io/repository: "{{.Repository.Name}}"
+    reposentry.io/commit-sha: "{{.CommitSHA}}"
+    reposentry.io/estimated-action: "{{.Detection.EstimatedAction}}"
+  annotations:
+    reposentry.io/repository-url: "{{.Repository.URL}}"
 spec:
-  description: "Bootstrap Pipeline to clone repository, validate and apply Tekton resources"
+  pipelineRef:
+    name: reposentry-bootstrap-pipeline
   params:
   - name: repo-url
-    type: string
-    description: "Repository URL to clone"
+    value: "{{.Repository.URL}}"
+  - name: repo-branch
+    value: "{{.Branch}}"
   - name: commit-sha
-    type: string
-    description: "Commit SHA to checkout"
-  - name: branch
-    type: string
-    description: "Branch name"
-    default: "main"
+    value: "{{.CommitSHA}}"
+  - name: target-namespace
+    value: "{{.Namespace}}"
   - name: tekton-path
-    type: string
-    description: "Path to Tekton resources"
-    default: "{{.Detection.ScanPath}}"
+    value: "{{.Detection.ScanPath}}"
   workspaces:
-  - name: source
-    description: "Workspace for source code"
-  - name: tekton-resources
-    description: "Workspace for processed Tekton resources"
-  tasks:
-  - name: clone-repository
-    taskRef:
-      name: reposentry-bootstrap-clone
-    params:
-    - name: url
-      value: $(params.repo-url)
-    - name: revision
-      value: $(params.commit-sha)
-    workspaces:
-    - name: output
-      workspace: source
-  - name: validate-tekton-resources
-    taskRef:
-      name: reposentry-bootstrap-validate
-    runAfter:
-    - clone-repository
-    params:
-    - name: tekton-path
-      value: $(params.tekton-path)
-    workspaces:
-    - name: source
-      workspace: source
-    - name: output
-      workspace: tekton-resources
-  - name: apply-tekton-resources
-    taskRef:
-      name: reposentry-bootstrap-apply-resources
-    runAfter:
-    - validate-tekton-resources
-    params:
-    - name: namespace
-      value: "{{.Namespace}}"
-    workspaces:
-    - name: resources
-      workspace: tekton-resources
-`
+  - name: source-workspace
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{.WorkspaceSize}}
+  - name: tekton-workspace
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{.WorkspaceSize}}
+  serviceAccountName: {{.ServiceAccount}}
+---`
 
-	tmpl, err := template.New("bootstrap-pipeline").Parse(pipelineTemplate)
+	tmpl, err := template.New("bootstrap-pipelinerun").Parse(pipelineRunTemplate)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse pipeline template: %w", err)
+		return "", fmt.Errorf("failed to parse PipelineRun template: %w", err)
 	}
 
-	var pipelineBuffer strings.Builder
-	if err := tmpl.Execute(&pipelineBuffer, config); err != nil {
-		return nil, fmt.Errorf("failed to execute pipeline template: %w", err)
+	var buffer strings.Builder
+	if err := tmpl.Execute(&buffer, config); err != nil {
+		return "", fmt.Errorf("failed to execute PipelineRun template: %w", err)
 	}
 
-	resources.BootstrapPipeline = pipelineBuffer.String()
-
-	// Generate supporting tasks
-	tasks, err := bpg.generateApplyTasks(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate apply tasks: %w", err)
-	}
-	resources.BootstrapTasks = tasks
-
-	// Generate supporting resources
-	if err := bpg.generateSupportingResources(config, resources); err != nil {
-		return nil, fmt.Errorf("failed to generate supporting resources: %w", err)
-	}
-
-	// Generate PipelineRun
-	pipelineRun, err := bpg.generateApplyPipelineRun(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate PipelineRun: %w", err)
-	}
-	resources.PipelineRun = pipelineRun
-
-	return resources, nil
-}
-
-// generateTriggerResources generates resources for "trigger" action
-func (bpg *BootstrapPipelineGenerator) generateTriggerResources(config *BootstrapPipelineConfig, resources *BootstrapPipelineResources) (*BootstrapPipelineResources, error) {
-	bpg.logger.Info("Generating trigger-mode Bootstrap Pipeline")
-
-	// For trigger mode, we apply resources first, then trigger them
-	pipelineTemplate := `
-apiVersion: tekton.dev/v1beta1
-kind: Pipeline
-metadata:
-  name: reposentry-bootstrap-trigger
-  namespace: {{.Namespace}}
-  labels:
-    reposentry.io/type: "bootstrap"
-    reposentry.io/action: "trigger"
-    reposentry.io/repository: "{{.Repository.Name}}"
-spec:
-  description: "Bootstrap Pipeline to apply and trigger user Tekton resources"
-  params:
-  - name: repo-url
-    type: string
-  - name: commit-sha
-    type: string
-  - name: branch
-    type: string
-    default: "main"
-  - name: tekton-path
-    type: string
-    default: "{{.Detection.ScanPath}}"
-  workspaces:
-  - name: source
-  - name: tekton-resources
-  tasks:
-  - name: clone-repository
-    taskRef:
-      name: reposentry-bootstrap-clone
-    params:
-    - name: url
-      value: $(params.repo-url)
-    - name: revision
-      value: $(params.commit-sha)
-    workspaces:
-    - name: output
-      workspace: source
-  - name: validate-tekton-resources
-    taskRef:
-      name: reposentry-bootstrap-validate
-    runAfter:
-    - clone-repository
-    params:
-    - name: tekton-path
-      value: $(params.tekton-path)
-    workspaces:
-    - name: source
-      workspace: source
-    - name: output
-      workspace: tekton-resources
-  - name: apply-definitions
-    taskRef:
-      name: reposentry-bootstrap-apply-resources
-    runAfter:
-    - validate-tekton-resources
-    params:
-    - name: namespace
-      value: "{{.Namespace}}"
-    - name: resource-filter
-      value: "Pipeline,Task"
-    workspaces:
-    - name: resources
-      workspace: tekton-resources
-  - name: trigger-runs
-    taskRef:
-      name: reposentry-bootstrap-trigger-runs
-    runAfter:
-    - apply-definitions
-    params:
-    - name: namespace
-      value: "{{.Namespace}}"
-    workspaces:
-    - name: resources
-      workspace: tekton-resources
-`
-
-	tmpl, err := template.New("bootstrap-trigger").Parse(pipelineTemplate)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse trigger template: %w", err)
-	}
-
-	var pipelineBuffer strings.Builder
-	if err := tmpl.Execute(&pipelineBuffer, config); err != nil {
-		return nil, fmt.Errorf("failed to execute trigger template: %w", err)
-	}
-
-	resources.BootstrapPipeline = pipelineBuffer.String()
-
-	// Generate trigger-specific tasks
-	tasks, err := bpg.generateTriggerTasks(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate trigger tasks: %w", err)
-	}
-	resources.BootstrapTasks = tasks
-
-	// Generate supporting resources
-	if err := bpg.generateSupportingResources(config, resources); err != nil {
-		return nil, fmt.Errorf("failed to generate supporting resources: %w", err)
-	}
-
-	// Generate PipelineRun
-	pipelineRun, err := bpg.generateTriggerPipelineRun(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate PipelineRun: %w", err)
-	}
-	resources.PipelineRun = pipelineRun
-
-	return resources, nil
-}
-
-// generateValidateResources generates resources for "validate" action
-func (bpg *BootstrapPipelineGenerator) generateValidateResources(config *BootstrapPipelineConfig, resources *BootstrapPipelineResources) (*BootstrapPipelineResources, error) {
-	bpg.logger.Info("Generating validate-mode Bootstrap Pipeline")
-
-	// For validate mode, we only clone and validate, no apply
-	pipelineTemplate := `
-apiVersion: tekton.dev/v1beta1
-kind: Pipeline
-metadata:
-  name: reposentry-bootstrap-validate
-  namespace: {{.Namespace}}
-  labels:
-    reposentry.io/type: "bootstrap"
-    reposentry.io/action: "validate"
-    reposentry.io/repository: "{{.Repository.Name}}"
-spec:
-  description: "Bootstrap Pipeline to validate Tekton resources only"
-  params:
-  - name: repo-url
-    type: string
-  - name: commit-sha
-    type: string
-  - name: tekton-path
-    type: string
-    default: "{{.Detection.ScanPath}}"
-  workspaces:
-  - name: source
-  tasks:
-  - name: clone-repository
-    taskRef:
-      name: reposentry-bootstrap-clone
-    params:
-    - name: url
-      value: $(params.repo-url)
-    - name: revision
-      value: $(params.commit-sha)
-    workspaces:
-    - name: output
-      workspace: source
-  - name: validate-only
-    taskRef:
-      name: reposentry-bootstrap-validate-only
-    runAfter:
-    - clone-repository
-    params:
-    - name: tekton-path
-      value: $(params.tekton-path)
-    workspaces:
-    - name: source
-      workspace: source
-`
-
-	tmpl, err := template.New("bootstrap-validate").Parse(pipelineTemplate)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse validate template: %w", err)
-	}
-
-	var pipelineBuffer strings.Builder
-	if err := tmpl.Execute(&pipelineBuffer, config); err != nil {
-		return nil, fmt.Errorf("failed to execute validate template: %w", err)
-	}
-
-	resources.BootstrapPipeline = pipelineBuffer.String()
-
-	// Generate validate-specific tasks
-	tasks, err := bpg.generateValidateTasks(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate validate tasks: %w", err)
-	}
-	resources.BootstrapTasks = tasks
-
-	// Generate supporting resources (minimal for validation)
-	if err := bpg.generateSupportingResources(config, resources); err != nil {
-		return nil, fmt.Errorf("failed to generate supporting resources: %w", err)
-	}
-
-	return resources, nil
-}
-
-// generateSkipResources generates minimal resources for "skip" action
-func (bpg *BootstrapPipelineGenerator) generateSkipResources(config *BootstrapPipelineConfig, resources *BootstrapPipelineResources) (*BootstrapPipelineResources, error) {
-	bpg.logger.Info("Generating skip-mode resources (minimal)")
-
-	// For skip mode, we just generate a simple notification task
-	pipelineTemplate := `
-apiVersion: tekton.dev/v1beta1
-kind: Pipeline
-metadata:
-  name: reposentry-bootstrap-skip
-  namespace: {{.Namespace}}
-  labels:
-    reposentry.io/type: "bootstrap"
-    reposentry.io/action: "skip"
-    reposentry.io/repository: "{{.Repository.Name}}"
-spec:
-  description: "Bootstrap Pipeline for repositories without Tekton resources"
-  tasks:
-  - name: notify-skip
-    taskRef:
-      name: reposentry-bootstrap-notify
-    params:
-    - name: message
-      value: "No Tekton resources found in repository {{.Repository.Name}}"
-    - name: status
-      value: "skipped"
-`
-
-	tmpl, err := template.New("bootstrap-skip").Parse(pipelineTemplate)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse skip template: %w", err)
-	}
-
-	var pipelineBuffer strings.Builder
-	if err := tmpl.Execute(&pipelineBuffer, config); err != nil {
-		return nil, fmt.Errorf("failed to execute skip template: %w", err)
-	}
-
-	resources.BootstrapPipeline = pipelineBuffer.String()
-
-	// Generate minimal tasks
-	tasks, err := bpg.generateSkipTasks(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate skip tasks: %w", err)
-	}
-	resources.BootstrapTasks = tasks
-
-	return resources, nil
+	return buffer.String(), nil
 }

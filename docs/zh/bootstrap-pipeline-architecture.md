@@ -747,7 +747,7 @@ reposentry_tekton_user_namespaces_total{status}
 ## 📚 相关文档
 
 - [用户指南 - Tekton集成](user-guide-tekton.md)
-- [实施计划](implementation-plan.md)
+
 - [故障排除指南](troubleshooting.md)
 - [架构设计](architecture.md)
 
