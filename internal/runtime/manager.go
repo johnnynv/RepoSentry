@@ -137,23 +137,18 @@ func (rm *RuntimeManager) initializeComponents() error {
 	triggerComponent := NewTriggerComponent(rm.triggerManager, rm.loggerManager.ForComponent("trigger"))
 	rm.addComponent("trigger", triggerComponent)
 
-	// 5. Tekton Manager (optional)
-	var tektonManager *tekton.TektonTriggerManager
-	if rm.config.Tekton.Enabled {
-		// Create a fallback GitClient for Tekton operations
-		// This client will be used for remote repository detection
-		tektonGitClient := gitclient.NewFallbackClient(rm.loggerManager.ForComponent("tekton-gitclient"))
+	// 5. Tekton Manager (required)
+	// Use the same GitClient factory as the Poller for consistency
+	// This ensures Tekton detection uses the appropriate API clients (GitHub/GitLab)
+	// instead of fallback, enabling proper remote repository content access
 
-		// Create simplified Tekton manager for detection and triggering
-		tektonManager = tekton.NewTektonTriggerManager(
-			tektonGitClient,
-			rm.triggerManager,
-			rm.loggerManager.ForComponent("tekton"))
+	// Create simplified Tekton manager for detection and triggering
+	tektonManager := tekton.NewTektonTriggerManager(
+		gitFactory,
+		rm.triggerManager,
+		rm.loggerManager.ForComponent("tekton"))
 
-		rm.logger.Info("Tekton integration enabled with TektonTriggerManager")
-	} else {
-		rm.logger.Info("Tekton integration disabled")
-	}
+	rm.logger.Info("Tekton integration enabled with TektonTriggerManager")
 
 	// 6. Poller Component
 	pollerConfig := pollerConfigFromConfig(rm.config)

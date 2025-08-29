@@ -52,6 +52,11 @@ type ClientConfig struct {
 	EnableFallback bool          `json:"enable_fallback"`
 }
 
+// GitClientFactory defines the interface for creating Git clients
+type GitClientFactory interface {
+	CreateClient(repo types.Repository, config ClientConfig) (GitClient, error)
+}
+
 // ClientFactory creates Git clients based on provider
 type ClientFactory struct {
 	mu           sync.RWMutex

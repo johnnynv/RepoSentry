@@ -345,14 +345,15 @@ graph TD
 
 **部署阶段（一次性）：**
 ```bash
-# 1. 生成Bootstrap Pipeline YAML
-reposentry generate bootstrap-pipeline --output bootstrap-pipeline.yaml
+# 1. 使用静态Bootstrap Pipeline YAML文件
+cd deployments/tekton/bootstrap/
 
 # 2. 部署到Tekton集群
-kubectl apply -f bootstrap-pipeline.yaml
+./install.sh
+# 或手动: kubectl apply -f .
 
-# 3. 配置EventListener指向Bootstrap Pipeline
-kubectl apply -f eventlistener-config.yaml
+# 3. 验证部署
+kubectl get pipeline,task -n reposentry-system
 ```
 
 **运行阶段（持续）：**
@@ -645,7 +646,7 @@ tekton_integration:
     scan_depth: 5  # .tekton/ 子目录最大扫描深度
     supported_extensions: [".yaml", ".yml"]
     max_files_scan: 50
-    ignore_patterns: ["*.template.*", "*/test/*", "*/examples/*"]  # 忽略模式
+    ignore_patterns: ["*.template.*", "*/test/*"]  # 忽略模式
     file_size_limit: "1MB"  # 单文件大小限制
     cache_ttl: "1h"  # 检测结果缓存时间
     

@@ -61,7 +61,6 @@ type SQLiteConfig struct {
 
 // TektonConfig represents Tekton EventListener configuration
 type TektonConfig struct {
-	Enabled           bool              `yaml:"enabled" json:"enabled"`
 	EventListenerURL  string            `yaml:"event_listener_url" json:"event_listener_url"`
 	SystemNamespace   string            `yaml:"system_namespace" json:"system_namespace"`
 	BootstrapPipeline string            `yaml:"bootstrap_pipeline" json:"bootstrap_pipeline"`

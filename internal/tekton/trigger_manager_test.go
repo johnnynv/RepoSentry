@@ -71,16 +71,17 @@ func (mt *MockTrigger) Reset() {
 func TestNewTektonTriggerManager(t *testing.T) {
 	parentLogger := createTestLogger()
 	gitClient := &MockGitClient{}
+	clientFactory := NewMockClientFactory(gitClient)
 	trigger := &MockTrigger{}
 
-	manager := NewTektonTriggerManager(gitClient, trigger, parentLogger)
+	manager := NewTektonTriggerManager(clientFactory, trigger, parentLogger)
 
 	if manager == nil {
 		t.Fatal("Expected manager to be created, got nil")
 	}
 
-	if manager.detector == nil {
-		t.Fatal("Expected detector to be set")
+	if manager.clientFactory == nil {
+		t.Fatal("Expected clientFactory to be set")
 	}
 
 	if manager.eventGenerator == nil {
@@ -128,9 +129,10 @@ spec:
     args: ["hello"]`),
 		},
 	}
+	clientFactory := NewMockClientFactory(gitClient)
 	trigger := &MockTrigger{}
 
-	manager := NewTektonTriggerManager(gitClient, trigger, parentLogger)
+	manager := NewTektonTriggerManager(clientFactory, trigger, parentLogger)
 
 	request := &TektonProcessRequest{
 		Repository: types.Repository{
@@ -199,7 +201,8 @@ func TestTektonTriggerManager_ProcessRepositoryChange_NoTektonResources(t *testi
 	}
 	trigger := &MockTrigger{}
 
-	manager := NewTektonTriggerManager(gitClient, trigger, parentLogger)
+	clientFactory := NewMockClientFactory(gitClient)
+	manager := NewTektonTriggerManager(clientFactory, trigger, parentLogger)
 
 	request := &TektonProcessRequest{
 		Repository: types.Repository{
@@ -252,7 +255,8 @@ func TestTektonTriggerManager_ProcessRepositoryChange_DetectionError(t *testing.
 	}
 	trigger := &MockTrigger{}
 
-	manager := NewTektonTriggerManager(gitClient, trigger, parentLogger)
+	clientFactory := NewMockClientFactory(gitClient)
+	manager := NewTektonTriggerManager(clientFactory, trigger, parentLogger)
 
 	request := &TektonProcessRequest{
 		Repository: types.Repository{
@@ -315,7 +319,8 @@ spec:
 		failError:  fmt.Errorf("trigger send error"),
 	}
 
-	manager := NewTektonTriggerManager(gitClient, trigger, parentLogger)
+	clientFactory := NewMockClientFactory(gitClient)
+	manager := NewTektonTriggerManager(clientFactory, trigger, parentLogger)
 
 	request := &TektonProcessRequest{
 		Repository: types.Repository{
@@ -375,7 +380,8 @@ spec:
 	}
 	trigger := &MockTrigger{}
 
-	manager := NewTektonTriggerManager(gitClient, trigger, parentLogger)
+	clientFactory := NewMockClientFactory(gitClient)
+	manager := NewTektonTriggerManager(clientFactory, trigger, parentLogger)
 
 	repository := types.Repository{
 		Name: "test-repo-status",
@@ -411,7 +417,8 @@ func TestTektonTriggerManager_IsEnabled(t *testing.T) {
 	gitClient := &MockGitClient{}
 	trigger := &MockTrigger{}
 
-	manager := NewTektonTriggerManager(gitClient, trigger, parentLogger)
+	clientFactory := NewMockClientFactory(gitClient)
+	manager := NewTektonTriggerManager(clientFactory, trigger, parentLogger)
 
 	if !manager.IsEnabled() {
 		t.Error("Expected manager to be enabled when trigger and detector are set")
@@ -419,7 +426,7 @@ func TestTektonTriggerManager_IsEnabled(t *testing.T) {
 
 	// Test with nil trigger
 	managerWithNilTrigger := &TektonTriggerManager{
-		detector:       NewTektonDetector(gitClient, parentLogger),
+		clientFactory:  NewMockClientFactory(gitClient),
 		eventGenerator: NewTektonEventGenerator(parentLogger),
 		trigger:        nil,
 		logger:         parentLogger,
@@ -435,7 +442,8 @@ func TestTektonTriggerManager_GetSupportedActions(t *testing.T) {
 	gitClient := &MockGitClient{}
 	trigger := &MockTrigger{}
 
-	manager := NewTektonTriggerManager(gitClient, trigger, parentLogger)
+	clientFactory := NewMockClientFactory(gitClient)
+	manager := NewTektonTriggerManager(clientFactory, trigger, parentLogger)
 
 	actions := manager.GetSupportedActions()
 

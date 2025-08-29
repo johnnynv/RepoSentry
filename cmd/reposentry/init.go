@@ -37,7 +37,6 @@ type ConfigWizard struct {
 	GitLabToken     string
 	GitHubRepos     []RepositoryConfig
 	GitLabRepos     []RepositoryConfig
-	TektonEnabled   bool
 	TektonURL       string // Optional for backward compatibility
 	PollingInterval int    // in minutes
 }
@@ -235,37 +234,27 @@ func collectGitLabRepositories(wizard *ConfigWizard, scanner *bufio.Scanner) err
 }
 
 func collectTektonConfig(wizard *ConfigWizard, scanner *bufio.Scanner) error {
-	fmt.Println("=== 🎯 Tekton Integration Configuration ===")
-	fmt.Println("❓ Would you like to enable Tekton integration? [y/N]")
-	fmt.Println("   💡 Tekton integration allows RepoSentry to automatically execute")
-	fmt.Println("   💡 user-defined Tekton resources from .tekton/ directories")
+	fmt.Println("=== 🎯 Tekton Integration (Required) ===")
+	fmt.Println("ℹ️  RepoSentry uses Tekton Bootstrap Pipeline for processing repository changes")
+	fmt.Println("ℹ️  Prerequisites: Bootstrap Pipeline must be deployed before running RepoSentry")
+	fmt.Println()
+	fmt.Println("📋 Processing Behavior:")
+	fmt.Println("   • Monitors all repositories for changes")
+	fmt.Println("   • Executes .tekton/ resources when found")
+	fmt.Println("   • Logs and skips repositories without .tekton/ directory")
+	fmt.Println()
+	fmt.Println("🔧 Deployment Command:")
+	fmt.Println("   cd deployments/tekton/bootstrap && ./install.sh")
+	fmt.Println()
+
+	// Tekton integration is always enabled
+
+	fmt.Println("❓ [Optional] Legacy Tekton EventListener URL (leave empty for Bootstrap Pipeline only):")
+	fmt.Println("   💡 Example: http://webhook.10.78.14.61.nip.io")
+	fmt.Println("   💡 This is for backward compatibility only")
 	fmt.Print("   > ")
-
 	if scanner.Scan() {
-		response := strings.ToLower(strings.TrimSpace(scanner.Text()))
-		wizard.TektonEnabled = (response == "y" || response == "yes")
-	}
-
-	if wizard.TektonEnabled {
-		fmt.Println()
-		fmt.Println("✅ Tekton integration enabled!")
-		fmt.Println()
-		fmt.Println("📋 Tekton Integration Notes:")
-		fmt.Println("   • RepoSentry will use the pre-deployed Bootstrap Pipeline")
-		fmt.Println("   • User repositories must place Tekton resources in .tekton/ directory")
-		fmt.Println("   • Bootstrap Pipeline infrastructure must be deployed separately")
-		fmt.Println("   • Use 'reposentry generate bootstrap-pipeline' to create infrastructure")
-		fmt.Println()
-
-		fmt.Println("❓ [Optional] Tekton EventListener URL for legacy compatibility:")
-		fmt.Println("   💡 Example: http://webhook.10.78.14.61.nip.io")
-		fmt.Println("   💡 Leave empty to use Bootstrap Pipeline only")
-		fmt.Print("   > ")
-		if scanner.Scan() {
-			wizard.TektonURL = strings.TrimSpace(scanner.Text())
-		}
-	} else {
-		fmt.Println("ℹ️  Tekton integration disabled")
+		wizard.TektonURL = strings.TrimSpace(scanner.Text())
 	}
 
 	fmt.Println()
@@ -375,7 +364,6 @@ polling:
   retry_backoff: "10s"
 
 tekton:
-  enabled: %t
   event_listener_url: "%s"
   system_namespace: "reposentry-system"
   bootstrap_pipeline: "reposentry-bootstrap-pipeline"
@@ -404,7 +392,7 @@ security:
 
 # Repository configuration file path
 repositories_config: "./repositories.yaml"
-`, time.Now().Format("2006-01-02 15:04:05"), wizard.PollingInterval, wizard.TektonEnabled, wizard.TektonURL)
+`, time.Now().Format("2006-01-02 15:04:05"), wizard.PollingInterval, wizard.TektonURL)
 
 	return os.WriteFile("config.yaml", []byte(config), 0644)
 }

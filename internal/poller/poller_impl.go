@@ -223,9 +223,13 @@ func (p *PollerImpl) PollRepository(ctx context.Context, repo types.Repository) 
 						// Create Tekton process request
 						request := &tekton.TektonProcessRequest{
 							Repository: types.Repository{
-								Name:     e.Repository,
-								URL:      repo.URL,      // Use the original repo URL
-								Provider: repo.Provider, // Use the original repo provider
+								Name:        e.Repository,
+								URL:         repo.URL,         // Use the original repo URL
+								Provider:    repo.Provider,    // Use the original repo provider
+								Token:       repo.Token,       // Include the token for authentication
+								APIBaseURL:  repo.APIBaseURL,  // Include API base URL if set
+								BranchRegex: repo.BranchRegex, // Include branch regex for completeness
+								Enabled:     repo.Enabled,     // Include enabled status
 							},
 							CommitSHA: e.CommitSHA,
 							Branch:    e.Branch,

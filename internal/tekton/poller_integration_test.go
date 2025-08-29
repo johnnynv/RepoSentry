@@ -5,8 +5,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/johnnynv/RepoSentry/internal/gitclient"
 	"github.com/johnnynv/RepoSentry/pkg/types"
 )
+
+// MockClientFactory implements GitClientFactory interface for testing
+type MockClientFactory struct {
+	gitClient gitclient.GitClient
+}
+
+func NewMockClientFactory(gitClient gitclient.GitClient) *MockClientFactory {
+	return &MockClientFactory{
+		gitClient: gitClient,
+	}
+}
+
+func (mcf *MockClientFactory) CreateClient(repo types.Repository, config gitclient.ClientConfig) (gitclient.GitClient, error) {
+	return mcf.gitClient, nil
+}
 
 // MockPoller simulates the Poller behavior for testing integration
 type MockPoller struct {
@@ -123,7 +139,8 @@ spec:
 	testLogger := createTestLogger()
 
 	// Create TektonTriggerManager
-	tektonManager := NewTektonTriggerManager(mockGitClient, mockTrigger, testLogger)
+	clientFactory := NewMockClientFactory(mockGitClient)
+	tektonManager := NewTektonTriggerManager(clientFactory, mockTrigger, testLogger)
 
 	// Create mock poller with Tekton integration
 	mockPoller := NewMockPoller(tektonManager)
@@ -207,7 +224,8 @@ func TestPollerTektonIntegration_NoTektonResources(t *testing.T) {
 	testLogger := createTestLogger()
 
 	// Create TektonTriggerManager
-	tektonManager := NewTektonTriggerManager(mockGitClient, mockTrigger, testLogger)
+	clientFactory := NewMockClientFactory(mockGitClient)
+	tektonManager := NewTektonTriggerManager(clientFactory, mockTrigger, testLogger)
 
 	// Create mock poller with Tekton integration
 	mockPoller := NewMockPoller(tektonManager)
@@ -243,7 +261,8 @@ func TestPollerTektonIntegration_ProcessingError(t *testing.T) {
 	testLogger := createTestLogger()
 
 	// Create TektonTriggerManager
-	tektonManager := NewTektonTriggerManager(mockGitClient, mockTrigger, testLogger)
+	clientFactory := NewMockClientFactory(mockGitClient)
+	tektonManager := NewTektonTriggerManager(clientFactory, mockTrigger, testLogger)
 
 	// Create mock poller with Tekton integration
 	mockPoller := NewMockPoller(tektonManager)
@@ -308,7 +327,8 @@ spec:
 	mockTrigger := &MockTrigger{}
 	testLogger := createTestLogger()
 
-	tektonManager := NewTektonTriggerManager(mockGitClient, mockTrigger, testLogger)
+	clientFactory := NewMockClientFactory(mockGitClient)
+	tektonManager := NewTektonTriggerManager(clientFactory, mockTrigger, testLogger)
 	mockPoller := NewMockPoller(tektonManager)
 
 	repos := []types.Repository{

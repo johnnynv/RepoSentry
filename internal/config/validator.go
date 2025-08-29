@@ -143,10 +143,7 @@ func (v *Validator) validateSQLite(sqlite *types.SQLiteConfig) {
 
 // validateTekton validates Tekton configuration
 func (v *Validator) validateTekton(tekton *types.TektonConfig) {
-	// If Tekton is not enabled, skip validation
-	if !tekton.Enabled {
-		return
-	}
+	// Tekton integration is always enabled in the new architecture
 
 	// Validate EventListenerURL if provided (optional for new architecture)
 	if tekton.EventListenerURL != "" {

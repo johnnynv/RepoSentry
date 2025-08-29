@@ -1,0 +1,360 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-clone
+  namespace: reposentry-system
+  labels:
+    reposentry.io/component: "bootstrap"
+    reposentry.io/type: "task"
+spec:
+  description: "Clone user repository to analyze and extract Tekton resources"
+  params:
+  - name: repo-url
+    type: string
+    description: "Repository URL to clone"
+  - name: repo-branch
+    type: string
+    description: "Repository branch to clone"
+    default: "main"
+  - name: commit-sha
+    type: string
+    description: "Specific commit SHA to checkout"
+    default: ""
+  workspaces:
+  - name: source
+    description: "Workspace to store cloned repository"
+  steps:
+  - name: clone-repository
+    image: alpine/git:v2.40.1
+    script: |
+      set -e
+      cd "$(workspaces.source.path)"
+      
+      echo "🔄 Cloning repository: $(params.repo-url)"
+      echo "📂 Branch: $(params.repo-branch)"
+      
+      git clone "$(params.repo-url)" repo
+      cd repo
+      
+      if [ -n "$(params.commit-sha)" ]; then
+        echo "📌 Checking out commit: $(params.commit-sha)"
+        git checkout "$(params.commit-sha)"
+      else
+        echo "📌 Using latest commit on branch: $(params.repo-branch)"
+        git checkout "$(params.repo-branch)"
+      fi
+      
+      echo "✅ Repository cloned successfully"
+      echo "📋 Repository contents:"
+      ls -la
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-compute-namespace
+  namespace: reposentry-system
+  labels:
+    reposentry.io/component: "bootstrap"
+    reposentry.io/type: "task"
+spec:
+  description: "Compute target namespace for user resources"
+  params:
+  - name: repo-full-name
+    type: string
+    description: "Repository full name (org/repo)"
+  - name: repo-url
+    type: string
+    description: "Repository URL"
+  results:
+  - name: namespace-name
+    description: "Computed namespace name"
+  steps:
+  - name: compute-namespace
+    image: alpine:3.18
+    script: |
+      set -e
+      
+      REPO_FULL_NAME="$(params.repo-full-name)"
+      REPO_URL="$(params.repo-url)"
+      
+      echo "🔍 Computing namespace for repository: $REPO_FULL_NAME"
+      
+      # Extract owner and repo name, sanitize for Kubernetes naming
+      OWNER=$(echo "$REPO_FULL_NAME" | cut -d'/' -f1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
+      REPO=$(echo "$REPO_FULL_NAME" | cut -d'/' -f2- | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
+      
+      # Create namespace name: reposentry-{owner}-{repo}
+      NAMESPACE="reposentry-${OWNER}-${REPO}"
+      
+      # Ensure it meets Kubernetes naming requirements (max 63 chars)
+      if [ ${#NAMESPACE} -gt 63 ]; then
+        NAMESPACE=$(echo "$NAMESPACE" | cut -c1-63 | sed 's/-$//')
+      fi
+      
+      echo "✅ Computed namespace: $NAMESPACE"
+      echo -n "$NAMESPACE" > "$(results.namespace-name.path)"
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-validate
+  namespace: reposentry-system
+  labels:
+    reposentry.io/component: "bootstrap"
+    reposentry.io/type: "task"
+spec:
+  description: "Validate Tekton resources and prepare for deployment"
+  params:
+  - name: tekton-path
+    type: string
+    description: "Path to Tekton resources in repository"
+    default: ".tekton"
+  - name: target-namespace
+    type: string
+    description: "Target namespace for validation"
+  workspaces:
+  - name: source
+    description: "Workspace containing cloned repository"
+  steps:
+  - name: validate-tekton-resources
+    image: bitnami/kubectl:1.28
+    script: |
+      set -e
+      SOURCE_PATH="$(workspaces.source.path)/repo"
+      TEKTON_PATH="$SOURCE_PATH/$(params.tekton-path)"
+      TARGET_NS="$(params.target-namespace)"
+      
+      echo "🔍 Validating Tekton resources in: $TEKTON_PATH"
+      echo "🎯 Target namespace: $TARGET_NS"
+      
+      if [ ! -d "$TEKTON_PATH" ]; then
+        echo "❌ Tekton resources directory not found: $TEKTON_PATH"
+        exit 1
+      fi
+      
+      echo "📋 Found Tekton resources directory"
+      ls -la "$TEKTON_PATH"
+      
+      mkdir -p "$(workspaces.source.path)/processed-tekton-resources"
+      
+      find "$TEKTON_PATH" -name "*.yaml" -o -name "*.yml" | while read file; do
+        echo "✅ Processing: $(basename "$file")"
+        cp "$file" "$(workspaces.source.path)/processed-tekton-resources/"
+      done
+      
+      echo "✅ Tekton resources validated and prepared"
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-ensure-namespace
+  namespace: reposentry-system
+  labels:
+    reposentry.io/component: "bootstrap"
+    reposentry.io/type: "task"
+spec:
+  description: "Ensure target namespace exists and is properly configured"
+  params:
+  - name: target-namespace
+    type: string
+    description: "Target namespace to create/ensure"
+  - name: repo-url
+    type: string
+    description: "Repository URL for labeling"
+  steps:
+  - name: ensure-namespace
+    image: bitnami/kubectl:1.28
+    script: |
+      set -e
+      NAMESPACE="$(params.target-namespace)"
+      REPO_URL="$(params.repo-url)"
+      
+      echo "🔍 Ensuring namespace exists: $NAMESPACE"
+      
+      if kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+        echo "✅ Namespace $NAMESPACE already exists"
+      else
+        echo "📝 Creating namespace: $NAMESPACE"
+        kubectl create namespace "$NAMESPACE"
+      fi
+      
+      kubectl label namespace "$NAMESPACE" \
+        reposentry.io/managed-by="bootstrap-pipeline" \
+        reposentry.io/repository-url="$REPO_URL" \
+        reposentry.io/created-by="bootstrap-pipeline" \
+        --overwrite
+      
+      echo "Namespace $NAMESPACE is ready"
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-apply
+  namespace: reposentry-system
+  labels:
+    reposentry.io/component: "bootstrap"
+    reposentry.io/type: "task"
+spec:
+  description: "Apply user Tekton Pipeline and Task definitions"
+  params:
+  - name: target-namespace
+    type: string
+    description: "Target namespace for resources"
+  workspaces:
+  - name: resources
+    description: "Validated Tekton resources workspace"
+  results:
+  - name: pipeline-name
+    description: "Name of the applied Pipeline"
+  steps:
+  - name: apply-resources
+    image: bitnami/kubectl:1.28
+    script: |
+      set -e
+      TARGET_NS="$(params.target-namespace)"
+      RESOURCES_PATH="$(workspaces.resources.path)/processed-tekton-resources"
+      
+      echo "📋 Applying Tekton Pipeline and Task definitions to namespace $TARGET_NS"
+      echo ""
+      
+      find "$RESOURCES_PATH" -name "*.yaml" -o -name "*.yml" | while read file; do
+        if ! grep -q "kind: PipelineRun" "$file"; then
+          echo "✅ Applying $(basename "$file")"
+          kubectl apply -f "$file" --namespace="$TARGET_NS"
+        else
+          echo "⏭️  Skipping PipelineRun file: $(basename "$file") (will be created dynamically)"
+        fi
+      done
+      
+      echo ""
+      echo "✅ Pipeline and Task resources applied successfully"
+      
+      PIPELINE_NAME=$(kubectl get pipelines -n "$TARGET_NS" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+      
+      if [ -n "$PIPELINE_NAME" ]; then
+        echo "🎯 Found Pipeline: $PIPELINE_NAME"
+        echo -n "$PIPELINE_NAME" > "$(results.pipeline-name.path)"
+      else
+        echo "⚠️  No Pipeline found in namespace $TARGET_NS"
+        echo -n "" > "$(results.pipeline-name.path)"
+      fi
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-run
+  namespace: reposentry-system
+  labels:
+    reposentry.io/component: "bootstrap"
+    reposentry.io/type: "task"
+spec:
+  description: "Create and trigger user Pipeline execution with v2 naming"
+  params:
+  - name: target-namespace
+    type: string
+  - name: pipeline-name
+    type: string
+  - name: repo-url
+    type: string
+  - name: repo-branch
+    type: string
+  - name: commit-sha
+    type: string
+  - name: repo-full-name
+    type: string
+  steps:
+  - name: create-pipelinerun
+    image: bitnami/kubectl:1.28
+    script: |
+      #!/bin/bash
+      set -e
+      
+      NAMESPACE="$(params.target-namespace)"
+      PIPELINE="$(params.pipeline-name)"
+      REPO_URL="$(params.repo-url)"
+      REPO_BRANCH="$(params.repo-branch)"
+      COMMIT_SHA="$(params.commit-sha)"
+      REPO_FULLNAME="$(params.repo-full-name)"
+      SHORT_SHA=$(echo "$COMMIT_SHA" | cut -c1-7)
+      
+      echo "🚀 Creating PipelineRun with v2 naming scheme"
+      echo "📋 Repository: $REPO_FULLNAME"
+      echo "🎯 Target namespace: $NAMESPACE"
+      echo "🔧 Pipeline: $PIPELINE"
+      
+      # Parse Git type
+      if [[ "$REPO_URL" == *"github.com"* ]]; then
+        GIT_TYPE="gh"
+      elif [[ "$REPO_URL" == *"gitlab.com"* ]]; then
+        GIT_TYPE="gl"
+      else
+        GIT_TYPE="git"
+      fi
+      
+      # Parse repository info
+      OWNER=$(echo "$REPO_FULLNAME" | cut -d'/' -f1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | cut -c1-8)
+      REPO=$(echo "$REPO_FULLNAME" | cut -d'/' -f2- | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | cut -c1-8)
+      BRANCH=$(echo "$REPO_BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | cut -c1-6)
+      PIPELINE_SHORT=$(echo "$PIPELINE" | cut -c1-12)
+      
+      # Generate v2 name
+      PIPELINERUN_NAME="${PIPELINE_SHORT}-auto-${GIT_TYPE}-${OWNER}-${REPO}-${BRANCH}-${SHORT_SHA}"
+      
+      # Ensure length <= 63
+      if [ ${#PIPELINERUN_NAME} -gt 63 ]; then
+        PIPELINE_SHORT=$(echo "$PIPELINE" | cut -c1-8)
+        OWNER=$(echo "$OWNER" | cut -c1-6)
+        REPO=$(echo "$REPO" | cut -c1-6)
+        BRANCH=$(echo "$BRANCH" | cut -c1-4)
+        PIPELINERUN_NAME="${PIPELINE_SHORT}-auto-${GIT_TYPE}-${OWNER}-${REPO}-${BRANCH}-${SHORT_SHA}"
+      fi
+      
+      echo "🎯 Generated name: $PIPELINERUN_NAME (${#PIPELINERUN_NAME} chars)"
+      
+      # Create PipelineRun
+      kubectl create -f - <<EOF
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: $PIPELINERUN_NAME
+  namespace: $NAMESPACE
+  labels:
+    reposentry.io/triggered-by: "bootstrap-pipeline"
+    reposentry.io/commit-sha: "$SHORT_SHA"
+    reposentry.io/git-type: "$GIT_TYPE"
+    reposentry.io/owner: "$OWNER"
+    reposentry.io/repo: "$REPO"
+    reposentry.io/branch: "$REPO_BRANCH"
+    reposentry.io/trigger-type: "auto"
+    reposentry.io/pipeline: "$PIPELINE"
+    tekton.dev/pipeline: "$PIPELINE"
+  annotations:
+    reposentry.io/repository-url: "$REPO_URL"
+    reposentry.io/repo-full-name: "$REPO_FULLNAME"
+    reposentry.io/source-branch: "$REPO_BRANCH"
+    reposentry.io/commit-sha: "$COMMIT_SHA"
+    reposentry.io/naming-scheme: "v2-compressed"
+spec:
+  pipelineRef:
+    name: $PIPELINE
+  params:
+  - name: git-url
+    value: "$REPO_URL"
+  - name: git-revision
+    value: "$COMMIT_SHA"
+  - name: git-short-sha
+    value: "$SHORT_SHA"
+  workspaces:
+  - name: shared-data
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+EOF
+      
+      echo "✅ PipelineRun created: $PIPELINERUN_NAME"
+      echo "🔗 Monitor: kubectl get pipelinerun $PIPELINERUN_NAME -n $NAMESPACE"
+

@@ -150,13 +150,11 @@ graph LR
 
 ```mermaid
 classDiagram
-    class StaticBootstrapGenerator {
-        +GenerateStaticBootstrapInfrastructure()
-        +GenerateSystemNamespace()
-        +GenerateBootstrapPipeline()
-        +GenerateBootstrapTasks()
-        +GenerateRBACResources()
-        +WriteToFiles()
+    class BootstrapDeployment {
+        +StaticYAMLFiles()
+        +InstallScript()
+        +VerifyDeployment()
+        +UninstallScript()
     }
     
     class TektonTriggerManager {
@@ -180,7 +178,7 @@ classDiagram
     
     TektonTriggerManager --> TektonDetector
     TektonTriggerManager --> TektonEventGenerator
-    StaticBootstrapGenerator --> "Bootstrap Infrastructure"
+    BootstrapDeployment --> "Bootstrap Infrastructure"
 ```
 
 ## 🔄 处理流程
@@ -471,13 +469,14 @@ graph TD
 
 ```bash
 # 安装 Bootstrap Pipeline
-./scripts/install-bootstrap-pipeline.sh
+cd deployments/tekton/bootstrap/
+./install.sh
 
 # 验证部署状态
-./scripts/validate-bootstrap-pipeline.sh
+./validate.sh
 
 # 卸载 Bootstrap Pipeline
-./scripts/uninstall-bootstrap-pipeline.sh
+./uninstall.sh
 ```
 
 ## 🔄 开发架构
@@ -487,22 +486,20 @@ graph TD
 ```
 RepoSentry/
 ├── cmd/reposentry/              # CLI 入口点
-│   ├── generate.go             # Bootstrap 生成命令
 │   ├── validate.go             # 配置验证命令
+│   ├── run.go                  # 主应用程序命令
 │   └── ...
 ├── internal/                    # 内部包
 │   ├── tekton/                 # Tekton 集成
-│   │   ├── static_generator.go    # 静态生成器
 │   │   ├── trigger_manager.go     # 触发管理器
 │   │   ├── detector.go            # 资源检测器
 │   │   └── event_generator.go     # 事件生成器
 │   ├── poller/                 # 轮询逻辑
 │   └── ...
-├── scripts/                     # 部署脚本
-│   ├── install-bootstrap-pipeline.sh
-│   ├── validate-bootstrap-pipeline.sh
-│   └── uninstall-bootstrap-pipeline.sh
-└── deployments/tekton/bootstrap/ # Bootstrap 模板
+└── deployments/tekton/bootstrap/ # Bootstrap Pipeline 基础设施
+    ├── install.sh             # 安装脚本
+    ├── validate.sh            # 验证脚本
+    └── uninstall.sh           # 卸载脚本
 ```
 
 ### 设计原则

@@ -23,25 +23,7 @@ chmod +x reposentry
 ./start.sh
 ```
 
-### Method 2: Script-based Setup (Legacy)
-```bash
-# Run the main script to get everything set up
-./examples/scripts/start.sh
 
-# Choose option 7 for Quick Start (All Steps)
-```
-
-### Method 3: Manual Setup (Advanced)
-```bash
-# Copy an example configuration
-cp examples/configs/basic.yaml config.yaml
-
-# Edit with your repositories and Tekton webhook URL
-vim config.yaml
-
-# Start monitoring
-./reposentry run --config config.yaml
-```
 
 ## 🎯 Interactive Setup Details
 
@@ -73,21 +55,58 @@ The `./reposentry setup interactive` command creates a complete, self-contained 
 
 ## 🔧 Tekton Integration
 
-RepoSentry provides two Tekton integration templates:
+RepoSentry provides seamless Tekton integration through a pre-deployed Bootstrap Pipeline architecture:
 
-### Basic Version (`reposentry-basic-system.yaml`)
-- **CloudEvents 1.0 Standard Compatible**
-- **Simple Parameters**: provider, organization, repository-name, branch-name, commit-sha
-- **Enterprise Ready**: Minimal configuration, maximum compatibility
-- **Use Case**: Production environments requiring CloudEvents compliance
+### Bootstrap Pipeline Architecture
+- **Pre-deployed Infrastructure**: Static Bootstrap Pipeline deployed once to your cluster
+- **Auto-Detection**: Automatically detects `.tekton/` directories in monitored repositories
+- **CloudEvents Standard**: Uses CloudEvents 1.0 for triggering Bootstrap Pipeline
+- **User Isolation**: Each repository gets its own namespace for secure execution
+- **Direct YAML Application**: User Tekton resources applied directly without modification
 
-### Advanced Version (`reposentry-advanced-system.yaml`)
-- **Rich Metadata Extraction**
-- **Enhanced Parameters**: repository-id, trigger-source, reposentry-event-id, project-name
-- **Development Friendly**: Detailed context for debugging and monitoring
-- **Use Case**: Development teams needing comprehensive pipeline information
+### Quick Tekton Setup
+1. **Deploy Bootstrap Pipeline**:
+   ```bash
+   # Download Bootstrap Pipeline files
+   git clone https://github.com/johnnynv/RepoSentry.git
+   cd RepoSentry/deployments/tekton/bootstrap/
+   
+   # One-click installation with auto-detection
+   ./scripts/install.sh
+   
+   # Or customize your installation
+   ./scripts/install.sh --ingress-class nginx --webhook-host webhook.example.com
+   
+   # Verify deployment
+   ./scripts/validate.sh --verbose
+   ```
 
-**Choose based on your needs**: Basic for production, Advanced for development.
+2. **Advanced Configuration Options**:
+   The install script now automatically detects and configures your Ingress Controller:
+   
+   ```bash
+   # Auto-detection (recommended)
+   ./scripts/install.sh                    # Detects nginx/traefik/istio automatically
+   
+   # Manual override options
+   ./scripts/install.sh --ingress-class traefik \
+                --webhook-host webhook.mycompany.com \
+                --ssl-redirect true
+   
+   # Environment variable configuration
+   export BOOTSTRAP_INGRESS_CLASS=nginx
+   export BOOTSTRAP_WEBHOOK_HOST=webhook.10.0.0.100.nip.io
+   ./scripts/install.sh
+   
+   # Disable auto-configuration
+   ./scripts/install.sh --no-auto-configure
+   ```
+
+3. **Enable in RepoSentry**: During interactive setup, choose "Enable Tekton integration"
+
+4. **Add Tekton resources to your repositories**: Place Pipeline/Task YAML files in `.tekton/` directory
+
+**Architecture Benefits**: No dynamic generation, simplified deployment, better security isolation.
 
 ## 📚 Documentation
 
@@ -112,11 +131,7 @@ For comprehensive documentation, see the [docs/](docs/) directory:
 │   ├── logger/             # Structured logging
 │   ├── types/              # Common types
 │   └── utils/              # Utilities
-├── examples/               # Configuration examples
-│   ├── configs/            # Example configurations
-│   ├── docker/             # Docker examples
-│   ├── kubernetes/         # Kubernetes examples
-│   └── scripts/            # Utility scripts
+
 ├── deployments/            # Deployment configurations
 │   ├── docker/             # Docker deployment
 │   ├── helm/               # Helm charts
@@ -164,7 +179,7 @@ make release        # Create release build
 
 ### 🚀 For Operations
 - **[Deployment Guide](deployments/README.md)** - Production deployment
-- **[Configuration Examples](examples/README.md)** - Sample configurations
+
 - **Swagger UI**: `http://localhost:8080/swagger/` (when running)
 
 ## 🚢 Deployment
@@ -177,8 +192,7 @@ docker-compose up -d
 
 ### Kubernetes
 ```bash
-helm install reposentry ./deployments/helm/reposentry \
-  -f examples/kubernetes/helm-values-prod.yaml
+helm install reposentry ./deployments/helm/reposentry
 ```
 
 ### Systemd
@@ -188,11 +202,7 @@ sudo ./deployments/systemd/install.sh
 
 ## 🔧 Configuration
 
-See [examples/configs/](examples/configs/) for configuration templates:
-- `basic.yaml` - Standard configuration
-- `minimal.yaml` - Minimal setup
-- `development.yaml` - Development environment
-- `production.yaml` - Production ready
+Create your configuration file with the following structure:
 
 ## 🔗 Features
 
@@ -220,13 +230,13 @@ curl http://localhost:8080/status
 curl http://localhost:8080/metrics
 ```
 
-### Using Scripts
+### Using Built-in Health Check
 ```bash
-# Automated health check
-./examples/scripts/health_check.sh
+# Check service health
+curl http://localhost:8080/health
 
-# Setup monitoring environment
-./examples/scripts/setup_env.sh
+# Monitor logs
+./reposentry run --log-level debug
 ```
 
 ## 🤝 Contributing

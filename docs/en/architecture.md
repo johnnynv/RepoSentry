@@ -150,13 +150,11 @@ graph LR
 
 ```mermaid
 classDiagram
-    class StaticBootstrapGenerator {
-        +GenerateStaticBootstrapInfrastructure()
-        +GenerateSystemNamespace()
-        +GenerateBootstrapPipeline()
-        +GenerateBootstrapTasks()
-        +GenerateRBACResources()
-        +WriteToFiles()
+    class BootstrapDeployment {
+        +StaticYAMLFiles()
+        +InstallScript()
+        +VerifyDeployment()
+        +UninstallScript()
     }
     
     class TektonTriggerManager {
@@ -180,7 +178,7 @@ classDiagram
     
     TektonTriggerManager --> TektonDetector
     TektonTriggerManager --> TektonEventGenerator
-    StaticBootstrapGenerator --> "Bootstrap Infrastructure"
+    BootstrapDeployment --> "Bootstrap Infrastructure"
 ```
 
 ## 🔄 Processing Flow
@@ -282,27 +280,20 @@ type TektonProcessResult struct {
 - **Configurable**: Support custom configuration
 
 ```go
-type StaticBootstrapGenerator struct {
-    logger *logger.Entry
+type BootstrapDeployment struct {
+    StaticFiles    map[string]string  // filename -> content
+    InstallScript  string
+    OutputDir      string
+    SystemNS       string
 }
 
-type StaticBootstrapConfig struct {
-    SystemNamespace   string
-    OutputDirectory   string
-    CloneImage       string
-    KubectlImage     string
-    WorkspaceSize    string
-    SecurityContext  map[string]interface{}
-}
-
-type StaticBootstrapOutput struct {
+type BootstrapComponents struct {
     Namespace      string
     Pipeline       string
     Tasks          []string
     ServiceAccount string
     Role           string
     RoleBinding    string
-    FilePaths      []string
 }
 ```
 
@@ -471,13 +462,14 @@ graph TD
 
 ```bash
 # Install Bootstrap Pipeline
-./scripts/install-bootstrap-pipeline.sh
+cd deployments/tekton/bootstrap/
+./install.sh
 
 # Validate deployment status
-./scripts/validate-bootstrap-pipeline.sh
+./validate.sh
 
 # Uninstall Bootstrap Pipeline
-./scripts/uninstall-bootstrap-pipeline.sh
+./uninstall.sh
 ```
 
 ## 🔄 Development Architecture
@@ -487,22 +479,20 @@ graph TD
 ```
 RepoSentry/
 ├── cmd/reposentry/              # CLI entry points
-│   ├── generate.go             # Bootstrap generation command
 │   ├── validate.go             # Configuration validation command
+│   ├── run.go                  # Main application command
 │   └── ...
 ├── internal/                    # Internal packages
 │   ├── tekton/                 # Tekton integration
-│   │   ├── static_generator.go    # Static generator
 │   │   ├── trigger_manager.go     # Trigger manager
 │   │   ├── detector.go            # Resource detector
 │   │   └── event_generator.go     # Event generator
 │   ├── poller/                 # Polling logic
 │   └── ...
-├── scripts/                     # Deployment scripts
-│   ├── install-bootstrap-pipeline.sh
-│   ├── validate-bootstrap-pipeline.sh
-│   └── uninstall-bootstrap-pipeline.sh
-└── deployments/tekton/bootstrap/ # Bootstrap templates
+└── deployments/tekton/bootstrap/ # Bootstrap Pipeline infrastructure
+    ├── install.sh             # Installation script
+    ├── validate.sh            # Validation script
+    └── uninstall.sh           # Uninstallation script
 ```
 
 ### Design Principles

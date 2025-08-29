@@ -11,7 +11,7 @@ import (
 )
 
 // BootstrapPipelineGenerator generates PipelineRun YAML for the pre-deployed Bootstrap Pipeline
-// Note: The actual Bootstrap Pipeline and Tasks are deployed statically using StaticBootstrapGenerator
+// Note: The actual Bootstrap Pipeline and Tasks are deployed statically using YAML files in deployments/tekton/bootstrap/
 type BootstrapPipelineGenerator struct {
 	logger *logger.Entry
 }

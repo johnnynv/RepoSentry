@@ -235,6 +235,56 @@ helm uninstall reposentry
 - **Health Checks**: Liveness, readiness, and startup probes
 - **Ingress**: HTTPS with cert-manager integration
 
+## Tekton Bootstrap Pipeline Deployment
+
+If you plan to use Tekton integration, you need to deploy the Bootstrap Pipeline infrastructure first:
+
+### Prerequisites
+- Kubernetes cluster with Tekton Pipelines installed
+- `kubectl` configured to access your cluster
+- Cluster admin permissions for RBAC setup
+
+### Quick Bootstrap Deployment
+
+```bash
+# Download Bootstrap Pipeline files
+git clone https://github.com/johnnynv/RepoSentry.git
+cd RepoSentry/deployments/tekton/bootstrap/
+
+# Deploy to your cluster
+./install.sh --verbose
+
+# Verify deployment
+./validate.sh --verbose
+
+# Optional: Test with custom namespace
+./install.sh --namespace production-reposentry
+```
+
+### Bootstrap Pipeline Management
+
+```bash
+# Check deployment health
+./validate.sh --verbose
+
+# Uninstall if needed
+./uninstall.sh
+
+# Force uninstall without confirmation
+./uninstall.sh --force
+
+# Dry run to see what would be deleted
+./uninstall.sh --dry-run
+```
+
+### Integration with RepoSentry
+
+Once Bootstrap Pipeline is deployed:
+1. Enable Tekton integration in RepoSentry configuration
+2. RepoSentry will automatically detect `.tekton/` directories in monitored repositories
+3. Changes in `.tekton/` directories will trigger the Bootstrap Pipeline
+4. Bootstrap Pipeline will apply user Tekton resources to dedicated namespaces
+
 ## Configuration
 
 ### Environment Variables

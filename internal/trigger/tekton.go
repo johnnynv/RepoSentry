@@ -296,26 +296,68 @@ func (t *TektonTrigger) Close() error {
 
 // sendHTTPRequest sends HTTP request to Tekton EventListener
 func (t *TektonTrigger) sendHTTPRequest(ctx context.Context, payload interface{}) (int, string, error) {
-	// Marshal payload to JSON
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return 0, "", fmt.Errorf("failed to marshal payload: %w", err)
+	var payloadBytes []byte
+	var req *http.Request
+	var err error
+
+	// Handle CloudEvent Binary Mode: send headers + data content only
+	if cloudEventsPayload, ok := payload.(CloudEventsPayload); ok {
+		// For CloudEvent Binary Mode, only send the data portion in the body
+		payloadBytes, err = json.Marshal(cloudEventsPayload.Data)
+		if err != nil {
+			return 0, "", fmt.Errorf("failed to marshal CloudEvent data: %w", err)
+		}
+
+		t.logger.WithFields(logger.Fields{
+			"operation":    "send_http_request",
+			"payload_size": len(payloadBytes),
+			"mode":         "cloudevent_binary",
+		}).Debug("Sending CloudEvent in Binary Mode to Tekton EventListener")
+
+		// Create request
+		req, err = http.NewRequestWithContext(ctx, "POST", t.config.Tekton.EventListenerURL, bytes.NewBuffer(payloadBytes))
+		if err != nil {
+			return 0, "", fmt.Errorf("failed to create HTTP request: %w", err)
+		}
+
+		// Add headers
+		t.addHeaders(req)
+		req.Header.Set("Content-Type", "application/json")
+
+		// Add CloudEvent headers for Binary Mode
+		req.Header.Set("ce-specversion", cloudEventsPayload.SpecVersion)
+		req.Header.Set("ce-type", cloudEventsPayload.Type)
+		req.Header.Set("ce-source", cloudEventsPayload.Source)
+		req.Header.Set("ce-id", cloudEventsPayload.ID)
+		if cloudEventsPayload.Time != "" {
+			req.Header.Set("ce-time", cloudEventsPayload.Time)
+		}
+		if cloudEventsPayload.DataContentType != "" {
+			req.Header.Set("ce-datacontenttype", cloudEventsPayload.DataContentType)
+		}
+	} else {
+		// For non-CloudEvent payloads, send as-is
+		payloadBytes, err = json.Marshal(payload)
+		if err != nil {
+			return 0, "", fmt.Errorf("failed to marshal payload: %w", err)
+		}
+
+		t.logger.WithFields(logger.Fields{
+			"operation":    "send_http_request",
+			"payload_size": len(payloadBytes),
+			"mode":         "standard",
+		}).Debug("Sending standard HTTP request to Tekton EventListener")
+
+		// Create request
+		req, err = http.NewRequestWithContext(ctx, "POST", t.config.Tekton.EventListenerURL, bytes.NewBuffer(payloadBytes))
+		if err != nil {
+			return 0, "", fmt.Errorf("failed to create HTTP request: %w", err)
+		}
+
+		// Add headers
+		t.addHeaders(req)
+		req.Header.Set("Content-Type", "application/json")
 	}
-
-	t.logger.WithFields(logger.Fields{
-		"operation":    "send_http_request",
-		"payload_size": len(payloadBytes),
-	}).Debug("Sending HTTP request to Tekton EventListener")
-
-	// Create request
-	req, err := http.NewRequestWithContext(ctx, "POST", t.config.Tekton.EventListenerURL, bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		return 0, "", fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	// Add headers
-	t.addHeaders(req)
-	req.Header.Set("Content-Type", "application/json")
 
 	// Send request
 	resp, err := t.httpClient.Do(req)

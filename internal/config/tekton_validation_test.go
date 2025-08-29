@@ -55,12 +55,11 @@ func createValidConfig() *types.Config {
 	}
 }
 
-func TestValidator_ValidateTekton_Enabled(t *testing.T) {
+func TestValidator_ValidateTekton_Valid(t *testing.T) {
 	validator := NewValidator()
 
 	config := createValidConfig()
 	config.Tekton = types.TektonConfig{
-		Enabled:           true,
 		EventListenerURL:  "http://localhost:8080/webhook",
 		SystemNamespace:   "reposentry-system",
 		BootstrapPipeline: "reposentry-bootstrap-pipeline",
@@ -75,20 +74,20 @@ func TestValidator_ValidateTekton_Enabled(t *testing.T) {
 	}
 }
 
-func TestValidator_ValidateTekton_Disabled(t *testing.T) {
+func TestValidator_ValidateTekton_InvalidFields(t *testing.T) {
 	validator := NewValidator()
 
 	config := createValidConfig()
 	config.Tekton = types.TektonConfig{
-		Enabled: false,
-		// Other fields can be invalid when disabled
+		// Invalid fields should cause validation errors
 		EventListenerURL: "invalid-url",
 		Timeout:          -1 * time.Second,
+		RetryBackoff:     -1 * time.Second,
 	}
 
 	err := validator.Validate(config)
-	if err != nil {
-		t.Errorf("Expected no validation errors when Tekton is disabled, got: %v", err)
+	if err == nil {
+		t.Error("Expected validation errors for invalid Tekton config, got none")
 	}
 }
 
@@ -131,7 +130,7 @@ func TestValidator_ValidateTekton_InvalidEventListenerURL(t *testing.T) {
 
 			config := createValidConfig()
 			config.Tekton = types.TektonConfig{
-				Enabled:          true,
+
 				EventListenerURL: tc.url,
 				Timeout:          30 * time.Second,
 				RetryBackoff:     5 * time.Second,
@@ -205,7 +204,7 @@ func TestValidator_ValidateTekton_InvalidKubernetesNames(t *testing.T) {
 
 			config := createValidConfig()
 			config.Tekton = types.TektonConfig{
-				Enabled:           true,
+
 				SystemNamespace:   tc.namespace,
 				BootstrapPipeline: tc.pipeline,
 				Timeout:           30 * time.Second,
@@ -268,7 +267,7 @@ func TestValidator_ValidateTekton_InvalidTimeouts(t *testing.T) {
 
 			config := createValidConfig()
 			config.Tekton = types.TektonConfig{
-				Enabled:      true,
+
 				Timeout:      tc.timeout,
 				RetryBackoff: tc.retryBackoff,
 			}
@@ -313,7 +312,7 @@ func TestValidator_ValidateTekton_InvalidRetryAttempts(t *testing.T) {
 
 			config := createValidConfig()
 			config.Tekton = types.TektonConfig{
-				Enabled:       true,
+
 				RetryAttempts: tc.retryAttempts,
 				Timeout:       30 * time.Second,
 				RetryBackoff:  5 * time.Second,
@@ -405,14 +404,15 @@ func TestValidator_IsValidKubernetesName(t *testing.T) {
 	}
 }
 
-func TestValidator_ValidateTekton_NilConfig(t *testing.T) {
+func TestValidator_ValidateTekton_ZeroConfig(t *testing.T) {
 	validator := NewValidator()
 
 	config := createValidConfig()
-	// Tekton is not set, should use zero value with Enabled=false
+	// Tekton is not set, should use zero value - this will have validation errors
+	// because Timeout and RetryBackoff default to 0
 
 	err := validator.Validate(config)
-	if err != nil {
-		t.Errorf("Expected no validation errors with nil Tekton config, got: %v", err)
+	if err == nil {
+		t.Error("Expected validation errors with zero-value Tekton config, got none")
 	}
 }

@@ -14,20 +14,20 @@ import (
 // TektonTriggerManager provides a streamlined Tekton integration workflow
 // This manager only handles detection and triggering, with Bootstrap Pipeline pre-deployed
 type TektonTriggerManager struct {
-	detector       *TektonDetector
+	clientFactory  gitclient.GitClientFactory
 	eventGenerator *TektonEventGenerator
 	trigger        trigger.Trigger
 	logger         *logger.Entry
 }
 
 // NewTektonTriggerManager creates a new Tekton trigger manager
-func NewTektonTriggerManager(gitClient gitclient.GitClient, tektonTrigger trigger.Trigger, parentLogger *logger.Entry) *TektonTriggerManager {
+func NewTektonTriggerManager(clientFactory gitclient.GitClientFactory, tektonTrigger trigger.Trigger, parentLogger *logger.Entry) *TektonTriggerManager {
 	managerLogger := parentLogger.WithFields(logger.Fields{
 		"component": "tekton-trigger-manager",
 	})
 
 	return &TektonTriggerManager{
-		detector:       NewTektonDetector(gitClient, managerLogger),
+		clientFactory:  clientFactory,
 		eventGenerator: NewTektonEventGenerator(managerLogger),
 		trigger:        tektonTrigger,
 		logger:         managerLogger,
@@ -70,8 +70,37 @@ func (ttm *TektonTriggerManager) ProcessRepositoryChange(ctx context.Context, re
 		EventSent:   false,
 	}
 
+	// Create Git client for the specific repository
+	clientConfig := gitclient.GetDefaultConfig()
+	clientConfig.Token = request.Repository.Token
+
+	// Set provider-specific configuration
+	if request.Repository.Provider == "gitlab" && request.Repository.APIBaseURL != "" {
+		clientConfig.BaseURL = request.Repository.APIBaseURL
+	} else if request.Repository.Provider == "github" && request.Repository.APIBaseURL != "" {
+		clientConfig.BaseURL = request.Repository.APIBaseURL
+	}
+
+	gitClient, err := ttm.clientFactory.CreateClient(request.Repository, clientConfig)
+	if err != nil {
+		result.Status = "client_creation_failed"
+		result.Error = fmt.Errorf("failed to create Git client: %w", err)
+		result.Duration = time.Since(startTime)
+
+		ttm.logger.WithError(err).WithFields(logger.Fields{
+			"repository": request.Repository.Name,
+			"provider":   request.Repository.Provider,
+		}).Error("Failed to create Git client for Tekton detection")
+
+		return result, result.Error
+	}
+	defer gitClient.Close()
+
+	// Create TektonDetector with the repository-specific GitClient
+	detector := NewTektonDetector(gitClient, ttm.logger)
+
 	// Step 1: Detect Tekton resources in remote repository
-	detection, err := ttm.detector.DetectTektonResources(ctx, request.Repository, request.CommitSHA, request.Branch)
+	detection, err := detector.DetectTektonResources(ctx, request.Repository, request.CommitSHA, request.Branch)
 	if err != nil {
 		result.Status = "detection_failed"
 		result.Error = fmt.Errorf("detection failed: %w", err)
@@ -207,8 +236,32 @@ func (ttm *TektonTriggerManager) GetDetectionStatus(ctx context.Context, reposit
 		"commit":     commitSHA,
 	}).Debug("Getting Tekton detection status")
 
+	// Create Git client for the specific repository
+	clientConfig := gitclient.GetDefaultConfig()
+	clientConfig.Token = repository.Token
+
+	// Set provider-specific configuration
+	if repository.Provider == "gitlab" && repository.APIBaseURL != "" {
+		clientConfig.BaseURL = repository.APIBaseURL
+	} else if repository.Provider == "github" && repository.APIBaseURL != "" {
+		clientConfig.BaseURL = repository.APIBaseURL
+	}
+
+	gitClient, err := ttm.clientFactory.CreateClient(repository, clientConfig)
+	if err != nil {
+		ttm.logger.WithError(err).WithFields(logger.Fields{
+			"repository": repository.Name,
+			"provider":   repository.Provider,
+		}).Error("Failed to create Git client for detection status")
+		return nil, fmt.Errorf("failed to create Git client: %w", err)
+	}
+	defer gitClient.Close()
+
+	// Create TektonDetector with the repository-specific GitClient
+	detector := NewTektonDetector(gitClient, ttm.logger)
+
 	// Perform detection only (no triggering)
-	detection, err := ttm.detector.DetectTektonResources(ctx, repository, commitSHA, "main")
+	detection, err := detector.DetectTektonResources(ctx, repository, commitSHA, "main")
 	if err != nil {
 		ttm.logger.WithError(err).WithFields(logger.Fields{
 			"repository": repository.Name,
@@ -227,7 +280,7 @@ func (ttm *TektonTriggerManager) GetDetectionStatus(ctx context.Context, reposit
 
 // IsEnabled returns whether the Tekton trigger manager is enabled
 func (ttm *TektonTriggerManager) IsEnabled() bool {
-	return ttm.trigger != nil && ttm.detector != nil
+	return ttm.trigger != nil && ttm.clientFactory != nil
 }
 
 // GetSupportedActions returns the list of supported actions

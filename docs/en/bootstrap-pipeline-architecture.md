@@ -232,14 +232,15 @@ graph TD
 
 **Deployment Phase (One-time):**
 ```bash
-# 1. Generate Bootstrap Pipeline YAML
-reposentry generate bootstrap-pipeline --output bootstrap-pipeline.yaml
+# 1. Use static Bootstrap Pipeline YAML files
+cd deployments/tekton/bootstrap/
 
 # 2. Deploy to Tekton cluster
-kubectl apply -f bootstrap-pipeline.yaml
+./install.sh
+# Or manually: kubectl apply -f .
 
-# 3. Configure EventListener to point to Bootstrap Pipeline
-kubectl apply -f eventlistener-config.yaml
+# 3. Verify deployment
+kubectl get pipeline,task -n reposentry-system
 ```
 
 **Runtime Phase (Continuous):**
@@ -489,7 +490,7 @@ tekton_integration:
     scan_depth: 5  # Maximum scan depth for .tekton/ subdirectories
     supported_extensions: [".yaml", ".yml"]
     max_files_scan: 50
-    ignore_patterns: ["*.template.*", "*/test/*", "*/examples/*"]  # Ignore patterns
+    ignore_patterns: ["*.template.*", "*/test/*"]  # Ignore patterns
     file_size_limit: "1MB"  # Single file size limit
     cache_ttl: "1h"  # Detection result cache time
     
