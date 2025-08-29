@@ -8,6 +8,7 @@ import (
 
 	"github.com/johnnynv/RepoSentry/internal/gitclient"
 	"github.com/johnnynv/RepoSentry/internal/storage"
+	"github.com/johnnynv/RepoSentry/internal/tekton"
 	"github.com/johnnynv/RepoSentry/internal/trigger"
 	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
@@ -22,6 +23,7 @@ type PollerImpl struct {
 	scheduler      Scheduler
 	clientFactory  *gitclient.ClientFactory
 	trigger        trigger.Trigger
+	tektonManager  *tekton.TektonTriggerManager // Added Tekton integration
 	logger         *logger.Entry
 
 	// Runtime state
@@ -42,7 +44,7 @@ type worker struct {
 }
 
 // NewPoller creates a new poller instance
-func NewPoller(config PollerConfig, storage storage.Storage, clientFactory *gitclient.ClientFactory, trigger trigger.Trigger, parentLogger *logger.Entry) *PollerImpl {
+func NewPoller(config PollerConfig, storage storage.Storage, clientFactory *gitclient.ClientFactory, trigger trigger.Trigger, tektonManager *tekton.TektonTriggerManager, parentLogger *logger.Entry) *PollerImpl {
 	branchMonitor := NewBranchMonitor(storage, clientFactory, parentLogger)
 	eventGenerator := NewEventGenerator(parentLogger)
 	scheduler := NewScheduler(config, parentLogger)
@@ -55,6 +57,7 @@ func NewPoller(config PollerConfig, storage storage.Storage, clientFactory *gitc
 		scheduler:      scheduler,
 		clientFactory:  clientFactory,
 		trigger:        trigger,
+		tektonManager:  tektonManager,
 		logger: parentLogger.WithFields(logger.Fields{
 			"component": "poller",
 			"module":    "poller_impl",
@@ -203,8 +206,59 @@ func (p *PollerImpl) PollRepository(ctx context.Context, repo types.Repository) 
 				}
 			}
 
-			// Automatically trigger Tekton pipeline for new events
-			if p.trigger != nil {
+			// Process with Tekton if available
+			if p.tektonManager != nil {
+				for _, event := range events {
+					go func(e types.Event) {
+						tektonCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+						defer cancel()
+
+						p.logger.WithFields(logger.Fields{
+							"operation":  "tekton_process",
+							"event_id":   e.ID,
+							"repository": e.Repository,
+							"branch":     e.Branch,
+						}).Info("Processing repository change with Tekton")
+
+						// Create Tekton process request
+						request := &tekton.TektonProcessRequest{
+							Repository: types.Repository{
+								Name:        e.Repository,
+								URL:         repo.URL,         // Use the original repo URL
+								Provider:    repo.Provider,    // Use the original repo provider
+								Token:       repo.Token,       // Include the token for authentication
+								APIBaseURL:  repo.APIBaseURL,  // Include API base URL if set
+								BranchRegex: repo.BranchRegex, // Include branch regex for completeness
+								Enabled:     repo.Enabled,     // Include enabled status
+							},
+							CommitSHA: e.CommitSHA,
+							Branch:    e.Branch,
+						}
+
+						tektonResult, err := p.tektonManager.ProcessRepositoryChange(tektonCtx, request)
+						if err != nil {
+							p.logger.WithError(err).WithFields(logger.Fields{
+								"operation":  "tekton_process",
+								"event_id":   e.ID,
+								"repository": e.Repository,
+							}).Error("Tekton processing failed")
+						} else {
+							p.logger.WithFields(logger.Fields{
+								"operation":       "tekton_process",
+								"event_id":        e.ID,
+								"repository":      e.Repository,
+								"detection":       tektonResult.Detection.EstimatedAction,
+								"event_sent":      tektonResult.EventSent,
+								"resources_found": len(tektonResult.Detection.Resources),
+								"has_tekton_dir":  tektonResult.Detection.HasTektonDirectory,
+							}).Info("Tekton processing completed")
+						}
+					}(event)
+				}
+			}
+
+			// Fallback to regular trigger if no Tekton manager
+			if p.tektonManager == nil && p.trigger != nil {
 				for _, event := range events {
 					go func(e types.Event) {
 						triggerCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -215,7 +269,7 @@ func (p *PollerImpl) PollRepository(ctx context.Context, repo types.Repository) 
 							"event_id":   e.ID,
 							"repository": e.Repository,
 							"branch":     e.Branch,
-						}).Info("Automatically triggering Tekton pipeline for event")
+						}).Info("Automatically triggering pipeline for event (fallback mode)")
 
 						result, err := p.trigger.SendEvent(triggerCtx, e)
 						if err != nil {
@@ -223,7 +277,7 @@ func (p *PollerImpl) PollRepository(ctx context.Context, repo types.Repository) 
 								"operation":  "auto_trigger",
 								"event_id":   e.ID,
 								"repository": e.Repository,
-							}).Error("Failed to trigger Tekton pipeline")
+							}).Error("Failed to trigger pipeline")
 						} else if result.Success {
 							p.logger.WithFields(logger.Fields{
 								"operation":   "auto_trigger",
@@ -231,7 +285,7 @@ func (p *PollerImpl) PollRepository(ctx context.Context, repo types.Repository) 
 								"repository":  e.Repository,
 								"status_code": result.StatusCode,
 								"duration":    result.Duration,
-							}).Info("Successfully triggered Tekton pipeline")
+							}).Info("Successfully triggered pipeline")
 						} else {
 							p.logger.WithFields(logger.Fields{
 								"operation":   "auto_trigger",
@@ -239,7 +293,7 @@ func (p *PollerImpl) PollRepository(ctx context.Context, repo types.Repository) 
 								"repository":  e.Repository,
 								"status_code": result.StatusCode,
 								"error":       result.Error,
-							}).Error("Tekton pipeline trigger failed")
+							}).Error("Pipeline trigger failed")
 						}
 					}(event)
 				}

@@ -10,6 +10,7 @@ import (
 	"github.com/johnnynv/RepoSentry/internal/gitclient"
 	"github.com/johnnynv/RepoSentry/internal/poller"
 	"github.com/johnnynv/RepoSentry/internal/storage"
+	"github.com/johnnynv/RepoSentry/internal/tekton"
 	"github.com/johnnynv/RepoSentry/internal/trigger"
 	"github.com/johnnynv/RepoSentry/pkg/logger"
 	"github.com/johnnynv/RepoSentry/pkg/types"
@@ -136,9 +137,22 @@ func (rm *RuntimeManager) initializeComponents() error {
 	triggerComponent := NewTriggerComponent(rm.triggerManager, rm.loggerManager.ForComponent("trigger"))
 	rm.addComponent("trigger", triggerComponent)
 
-	// 5. Poller Component
+	// 5. Tekton Manager (required)
+	// Use the same GitClient factory as the Poller for consistency
+	// This ensures Tekton detection uses the appropriate API clients (GitHub/GitLab)
+	// instead of fallback, enabling proper remote repository content access
+
+	// Create simplified Tekton manager for detection and triggering
+	tektonManager := tekton.NewTektonTriggerManager(
+		gitFactory,
+		rm.triggerManager,
+		rm.loggerManager.ForComponent("tekton"))
+
+	rm.logger.Info("Tekton integration enabled with TektonTriggerManager")
+
+	// 6. Poller Component
 	pollerConfig := pollerConfigFromConfig(rm.config)
-	rm.poller = poller.NewPoller(pollerConfig, rm.storage, gitFactory, rm.triggerManager, rm.loggerManager.ForComponent("poller"))
+	rm.poller = poller.NewPoller(pollerConfig, rm.storage, gitFactory, rm.triggerManager, tektonManager, rm.loggerManager.ForComponent("poller"))
 	pollerComponent := NewPollerComponent(rm.poller, rm.config.Repositories, rm.loggerManager.ForComponent("poller"))
 	rm.addComponent("poller", pollerComponent)
 

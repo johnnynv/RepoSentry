@@ -157,6 +157,48 @@ func (f *FallbackClient) Close() error {
 	return nil
 }
 
+// ListFiles retrieves files from a repository path (fallback implementation)
+func (f *FallbackClient) ListFiles(ctx context.Context, repo types.Repository, commitSHA, path string) ([]string, error) {
+	f.logger.WithFields(logger.Fields{
+		"operation": "list_files",
+		"repository": repo.Name,
+		"commit": commitSHA,
+		"path": path,
+	}).Info("Starting fallback file listing")
+
+	// Note: This is a simplified fallback implementation
+	// In production, you might want to implement this using git archive or similar
+	return nil, fmt.Errorf("ListFiles not implemented in fallback client - API client required")
+}
+
+// GetFileContent retrieves file content (fallback implementation)
+func (f *FallbackClient) GetFileContent(ctx context.Context, repo types.Repository, commitSHA, filePath string) ([]byte, error) {
+	f.logger.WithFields(logger.Fields{
+		"operation": "get_file_content",
+		"repository": repo.Name,
+		"commit": commitSHA,
+		"file_path": filePath,
+	}).Info("Starting fallback file content retrieval")
+
+	// Note: This is a simplified fallback implementation
+	// In production, you might want to implement this using git show or similar
+	return nil, fmt.Errorf("GetFileContent not implemented in fallback client - API client required")
+}
+
+// CheckDirectoryExists checks if directory exists (fallback implementation)
+func (f *FallbackClient) CheckDirectoryExists(ctx context.Context, repo types.Repository, commitSHA, dirPath string) (bool, error) {
+	f.logger.WithFields(logger.Fields{
+		"operation": "check_directory_exists",
+		"repository": repo.Name,
+		"commit": commitSHA,
+		"dir_path": dirPath,
+	}).Info("Starting fallback directory existence check")
+
+	// Note: This is a simplified fallback implementation
+	// In production, you might want to implement this using git ls-tree or similar
+	return false, fmt.Errorf("CheckDirectoryExists not implemented in fallback client - API client required")
+}
+
 // parseLsRemoteOutput parses git ls-remote output to extract branches
 func (f *FallbackClient) parseLsRemoteOutput(output string) ([]types.Branch, error) {
 	lines := strings.Split(strings.TrimSpace(output), "\n")

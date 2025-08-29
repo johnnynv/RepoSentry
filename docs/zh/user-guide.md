@@ -143,7 +143,19 @@ git clone https://github.com/johnnynv/RepoSentry.git
 cd RepoSentry/deployments/docker
 
 # 编辑配置文件
-cp ../../examples/configs/basic.yaml config.yaml
+# 创建配置文件
+cat > config.yaml << EOF
+app:
+  name: "reposentry"
+  log_level: "info"
+tekton:
+  event_listener_url: "http://webhook.your-domain.com/"
+repositories:
+  - name: "your-repo"
+    url: "https://github.com/user/repo"
+    provider: "github"
+    token: "\$\{GITHUB_TOKEN\}"
+EOF
 vim config.yaml  # 修改你的设置
 
 # 设置环境变量
@@ -180,16 +192,22 @@ kubectl create secret generic reposentry-tokens \
   --from-literal=github-token="your_github_token" \
   --from-literal=gitlab-token="your_gitlab_token"
 
-# 使用示例配置部署
-helm install reposentry ./deployments/helm/reposentry \
-  -f examples/kubernetes/helm-values-prod.yaml
+# 部署到 Kubernetes
+helm install reposentry ./deployments/helm/reposentry
 ```
 
 ### 自定义部署
 
 ```bash
-# 复制并编辑配置
-cp examples/kubernetes/helm-values-prod.yaml my-values.yaml
+# 创建自定义配置
+cat > my-values.yaml << EOF
+replicaCount: 2
+image:
+  tag: "latest"
+ingress:
+  enabled: true
+  host: reposentry.your-domain.com
+EOF
 vim my-values.yaml
 
 # 部署
@@ -1346,7 +1364,7 @@ fi
 - [技术架构文档](ARCHITECTURE.md)
 - [部署指南](../deployments/README.md)
 - [API 示例](../API_EXAMPLES.md)
-- [配置示例](../examples/README.md)
+
 - [故障排除指南](TROUBLESHOOTING.md)
 
 ---

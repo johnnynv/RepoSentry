@@ -117,7 +117,7 @@ RepoSentry/
 │   └── integration/         # Integration tests
 ├── deployments/              # Deployment configurations
 ├── docs/                     # Documentation
-├── examples/                 # Example configurations
+
 └── Makefile                  # Build scripts
 ```
 

@@ -106,6 +106,8 @@ func (t *EventTransformerImpl) TransformToCloudEvents(event types.Event) (CloudE
 		eventTypeStr = "branch_created"
 	case types.EventTypeBranchDeleted:
 		eventTypeStr = "branch_deleted"
+	case types.EventTypeTektonDetected:
+		eventTypeStr = "tekton_detected"
 	default:
 		eventTypeStr = "unknown"
 	}

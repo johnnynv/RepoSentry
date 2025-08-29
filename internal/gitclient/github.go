@@ -2,6 +2,7 @@ package gitclient
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -400,4 +401,130 @@ func (c *GitHubClient) parseResetTime(resetStr string) time.Time {
 		return time.Unix(resetUnix, 0)
 	}
 	return time.Now().Add(time.Hour) // Default to 1 hour if parsing fails
+}
+
+// GitHubTreeItem represents a single item in GitHub's git tree API response
+type GitHubTreeItem struct {
+	Path string `json:"path"`
+	Mode string `json:"mode"`
+	Type string `json:"type"`
+	SHA  string `json:"sha"`
+	Size int    `json:"size"`
+}
+
+// GitHubTree represents GitHub's git tree API response
+type GitHubTree struct {
+	SHA       string           `json:"sha"`
+	URL       string           `json:"url"`
+	Tree      []GitHubTreeItem `json:"tree"`
+	Truncated bool             `json:"truncated"`
+}
+
+// GitHubContent represents GitHub's contents API response
+type GitHubContent struct {
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	SHA         string `json:"sha"`
+	Size        int    `json:"size"`
+	URL         string `json:"url"`
+	HTMLURL     string `json:"html_url"`
+	GitURL      string `json:"git_url"`
+	DownloadURL string `json:"download_url"`
+	Type        string `json:"type"`
+	Content     string `json:"content"`
+	Encoding    string `json:"encoding"`
+}
+
+// ListFiles retrieves all files in a specific path for a commit
+func (c *GitHubClient) ListFiles(ctx context.Context, repo types.Repository, commitSHA, path string) ([]string, error) {
+	owner, repoName, err := c.parseRepoURL(repo.URL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	// Use Git Tree API to get files recursively
+	url := fmt.Sprintf("%s/repos/%s/%s/git/trees/%s?recursive=1", 
+		c.baseURL, owner, repoName, commitSHA)
+
+	var tree GitHubTree
+	if err := c.makeRequest(ctx, "GET", url, nil, &tree); err != nil {
+		return nil, fmt.Errorf("failed to get tree: %w", err)
+	}
+
+	var files []string
+	for _, item := range tree.Tree {
+		// Filter files in the specified path
+		if item.Type == "blob" && (path == "" || strings.HasPrefix(item.Path, path)) {
+			files = append(files, item.Path)
+		}
+	}
+
+	return files, nil
+}
+
+// GetFileContent retrieves the content of a specific file
+func (c *GitHubClient) GetFileContent(ctx context.Context, repo types.Repository, commitSHA, filePath string) ([]byte, error) {
+	owner, repoName, err := c.parseRepoURL(repo.URL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	// Use Contents API with specific ref
+	url := fmt.Sprintf("%s/repos/%s/%s/contents/%s?ref=%s", 
+		c.baseURL, owner, repoName, filePath, commitSHA)
+
+	var content GitHubContent
+	if err := c.makeRequest(ctx, "GET", url, nil, &content); err != nil {
+		return nil, fmt.Errorf("failed to get file content: %w", err)
+	}
+
+	// Decode base64 content
+	if content.Encoding == "base64" {
+		decoded, err := base64DecodeContent(content.Content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode content: %w", err)
+		}
+		return decoded, nil
+	}
+
+	return []byte(content.Content), nil
+}
+
+// CheckDirectoryExists checks if a directory exists in the repository
+func (c *GitHubClient) CheckDirectoryExists(ctx context.Context, repo types.Repository, commitSHA, dirPath string) (bool, error) {
+	owner, repoName, err := c.parseRepoURL(repo.URL)
+	if err != nil {
+		return false, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	// Use Contents API to check if directory exists
+	url := fmt.Sprintf("%s/repos/%s/%s/contents/%s?ref=%s", 
+		c.baseURL, owner, repoName, dirPath, commitSHA)
+
+	var contents []GitHubContent
+	if err := c.makeRequest(ctx, "GET", url, nil, &contents); err != nil {
+		// If 404, directory doesn't exist
+		if networkErr, ok := err.(*NetworkError); ok {
+			if strings.Contains(networkErr.Err.Error(), "404") {
+				return false, nil
+			}
+		}
+		return false, fmt.Errorf("failed to check directory: %w", err)
+	}
+
+	return len(contents) > 0, nil
+}
+
+// base64DecodeContent decodes base64 encoded content from GitHub API
+func base64DecodeContent(content string) ([]byte, error) {
+	// Remove whitespace and newlines
+	content = strings.ReplaceAll(content, "\n", "")
+	content = strings.ReplaceAll(content, " ", "")
+	
+	decoded, err := base64.StdEncoding.DecodeString(content)
+	if err != nil {
+		return nil, fmt.Errorf("base64 decode error: %w", err)
+	}
+	
+	return decoded, nil
 }

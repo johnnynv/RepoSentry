@@ -20,7 +20,29 @@ mv reposentry-v0.1.0.linux.x86_64 reposentry
 chmod +x reposentry
 ```
 
-### Step 3: Run Interactive Setup
+### Step 3: Deploy Tekton Bootstrap Pipeline (If Using Tekton)
+If you plan to use Tekton integration, deploy the Bootstrap Pipeline first:
+
+```bash
+# Download Bootstrap Pipeline files
+wget -r --no-parent --reject="index.html*" --cut-dirs=4 \
+  https://github.com/johnnynv/RepoSentry/tree/main/deployments/tekton/bootstrap/
+
+# Or clone the repository and use static files
+git clone https://github.com/johnnynv/RepoSentry.git temp-repo
+cp -r temp-repo/deployments/tekton/bootstrap ./
+rm -rf temp-repo
+
+# Deploy to your Kubernetes cluster
+cd bootstrap
+./install.sh --verbose
+
+# Verify deployment
+./validate.sh --verbose
+cd ..
+```
+
+### Step 4: Run Interactive Setup
 ```bash
 ./reposentry setup interactive
 ```
@@ -30,10 +52,10 @@ You'll be asked to provide:
 - **GitLab Token** - Get one at your GitLab instance: `/profile/personal_access_tokens`
 - **Repository URLs** - The repositories you want to monitor
 - **Branch Names** - Which branches to watch (supports regex like `feature/.*`)
-- **Tekton URL** - Your Tekton EventListener webhook URL
+- **Tekton Integration** - Enable if you deployed Bootstrap Pipeline above
 - **Polling Interval** - How often to check for changes (recommended: 5 minutes)
 
-### Step 4: Start Monitoring
+### Step 5: Start Monitoring
 ```bash
 ./start.sh
 ```
@@ -53,7 +75,17 @@ repository-monitor/
 ├── stop.sh                # Stop monitoring
 ├── .env                   # Your access tokens (keep secure!)
 ├── README.md              # Detailed usage guide
-└── logs/                  # Log files (created when running)
+├── logs/                  # Log files (created when running)
+└── bootstrap/             # Tekton Bootstrap Pipeline (if using Tekton)
+    ├── 00-namespace.yaml  # System namespace
+    ├── 01-pipeline.yaml   # Bootstrap Pipeline
+    ├── 02-tasks.yaml      # Bootstrap Tasks
+    ├── 03-serviceaccount.yaml
+    ├── 04-role.yaml
+    ├── 05-rolebinding.yaml
+    ├── install.sh         # Install Bootstrap Pipeline
+    ├── validate.sh        # Verify installation
+    └── uninstall.sh       # Clean removal
 ```
 
 ## 🔧 Managing Your Setup
@@ -106,8 +138,10 @@ GITLAB_TOKEN=your_new_token
 - Verify your token has access to private repositories
 
 **"Tekton connection failed"**
-- Verify the EventListener URL is accessible
-- Check network connectivity from your machine
+- Verify Bootstrap Pipeline is deployed: `cd bootstrap && ./validate.sh`
+- Check if Tekton is enabled in your configuration
+- Ensure Bootstrap Pipeline is running in your cluster
+- Verify RBAC permissions for Bootstrap Pipeline
 
 ### Get Help
 
@@ -120,9 +154,10 @@ GITLAB_TOKEN=your_new_token
 Once RepoSentry is running:
 
 1. **Monitor the logs** to see repository changes being detected
-2. **Check your Tekton Dashboard** to see triggered pipelines
-3. **Customize the configuration** for your specific needs
-4. **Set up log rotation** for production use
+2. **Check your Tekton Dashboard** to see triggered pipelines (if using Tekton)
+3. **Verify Bootstrap Pipeline health**: `cd bootstrap && ./validate.sh --verbose`
+4. **Customize the configuration** for your specific needs
+5. **Set up log rotation** for production use
 
 For advanced configuration options, see the generated `README.md` in your monitoring directory.
 

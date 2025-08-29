@@ -1,0 +1,144 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: reposentry-bootstrap-run
+  namespace: reposentry-system
+  labels:
+    reposentry.io/component: "bootstrap"
+    reposentry.io/type: "task"
+spec:
+  description: "Create and trigger user Pipeline execution with dynamic workspace binding"
+  params:
+  - name: target-namespace
+    type: string
+  - name: pipeline-name
+    type: string
+  - name: repo-url
+    type: string
+  - name: repo-branch
+    type: string
+  - name: commit-sha
+    type: string
+  steps:
+  - name: create-pipelinerun
+    image: bitnami/kubectl:1.28
+    script: |
+      #!/bin/bash
+      set -e
+      NAMESPACE="$(params.target-namespace)"
+      PIPELINE="$(params.pipeline-name)"
+      REPO_URL="$(params.repo-url)"
+      REPO_BRANCH="$(params.repo-branch)"
+      COMMIT_SHA="$(params.commit-sha)"
+      SHORT_SHA=$(echo "$COMMIT_SHA" | cut -c1-8)
+      TIMESTAMP=$(date +%s)
+      
+      PIPELINERUN_NAME="${PIPELINE}-auto-${TIMESTAMP}"
+      
+      echo "🚀 Creating PipelineRun in namespace $NAMESPACE"
+      echo "Pipeline: $PIPELINE"
+      echo "Repository: $REPO_URL"
+      echo "Branch: $REPO_BRANCH"
+      echo "Commit: $COMMIT_SHA"
+      echo ""
+      
+      # Dynamic workspace detection
+      echo "📋 Detecting Pipeline workspace requirements..."
+      WORKSPACES=$(kubectl get pipeline $PIPELINE -n $NAMESPACE -o jsonpath='{.spec.workspaces[*].name}' 2>/dev/null || echo "")
+      
+      if [ -n "$WORKSPACES" ]; then
+        echo "🔧 Pipeline requires workspaces: $WORKSPACES"
+        echo "   Creating PipelineRun with 5Gi workspace bindings..."
+        
+        # Create workspace bindings section
+        WS_YAML=""
+        for ws in $WORKSPACES; do
+          if [ -n "$WS_YAML" ]; then
+            WS_YAML="$WS_YAML"$'\n'
+          fi
+          WS_YAML="${WS_YAML}  - name: $ws"$'\n'
+          WS_YAML="${WS_YAML}    volumeClaimTemplate:"$'\n'
+          WS_YAML="${WS_YAML}      spec:"$'\n'
+          WS_YAML="${WS_YAML}        accessModes:"$'\n'
+          WS_YAML="${WS_YAML}        - ReadWriteOnce"$'\n'
+          WS_YAML="${WS_YAML}        resources:"$'\n'
+          WS_YAML="${WS_YAML}          requests:"$'\n'
+          WS_YAML="${WS_YAML}            storage: 5Gi"
+        done
+        
+        # Create PipelineRun with workspaces
+        kubectl apply -f - <<EOF
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: $PIPELINERUN_NAME
+  namespace: $NAMESPACE
+  labels:
+    reposentry.io/triggered-by: "bootstrap-pipeline"
+    reposentry.io/commit-sha: "$SHORT_SHA"
+    tekton.dev/pipeline: "$PIPELINE"
+  annotations:
+    reposentry.io/repository-url: "$REPO_URL"
+    reposentry.io/source-branch: "$REPO_BRANCH"
+    reposentry.io/commit-sha: "$COMMIT_SHA"
+    reposentry.io/workspace-capacity: "5Gi"
+spec:
+  pipelineRef:
+    name: $PIPELINE
+  params:
+  - name: git-url
+    value: "$REPO_URL"
+  - name: git-revision
+    value: "$COMMIT_SHA"
+  - name: git-short-sha
+    value: "$SHORT_SHA"
+  workspaces:
+$WS_YAML
+EOF
+      else
+        echo "✅ Pipeline requires no workspaces"
+        
+        # Create PipelineRun without workspaces
+        kubectl apply -f - <<EOF
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: $PIPELINERUN_NAME
+  namespace: $NAMESPACE
+  labels:
+    reposentry.io/triggered-by: "bootstrap-pipeline"
+    reposentry.io/commit-sha: "$SHORT_SHA"
+    tekton.dev/pipeline: "$PIPELINE"
+  annotations:
+    reposentry.io/repository-url: "$REPO_URL"
+    reposentry.io/source-branch: "$REPO_BRANCH"
+    reposentry.io/commit-sha: "$COMMIT_SHA"
+spec:
+  pipelineRef:
+    name: $PIPELINE
+  params:
+  - name: git-url
+    value: "$REPO_URL"
+  - name: git-revision
+    value: "$COMMIT_SHA"
+  - name: git-short-sha
+    value: "$SHORT_SHA"
+EOF
+      fi
+      
+      echo ""
+      echo "✅ PipelineRun created successfully!"
+      echo "🔗 View in Tekton Dashboard:"
+      echo "   http://tekton.10.78.14.61.nip.io/#/namespaces/$NAMESPACE/pipelineruns/$PIPELINERUN_NAME"
+      echo ""
+      echo "📊 Monitor progress:"
+      echo "   kubectl get pipelinerun $PIPELINERUN_NAME -n $NAMESPACE"
+      echo "   kubectl logs pipelinerun/$PIPELINERUN_NAME -n $NAMESPACE -f"
+      echo ""
+      if [ -n "$WORKSPACES" ]; then
+        echo "💾 Workspace configuration:"
+        echo "   Detected workspaces: $WORKSPACES"
+        echo "   Capacity per workspace: 5Gi"
+        echo "   Access mode: ReadWriteOnce"
+      fi
+

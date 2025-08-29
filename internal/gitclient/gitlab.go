@@ -2,6 +2,7 @@ package gitclient
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -351,4 +352,145 @@ func extractGitLabAPIURL(repoURL string) string {
 		// For any other GitLab instance, construct API URL
 		return fmt.Sprintf("%s://%s/api/v4", scheme, host)
 	}
+}
+
+// GitLabTreeItem represents a single item in GitLab's repository tree API response
+type GitLabTreeItem struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Path string `json:"path"`
+	Mode string `json:"mode"`
+}
+
+// GitLabFile represents GitLab's file API response
+type GitLabFile struct {
+	FileName     string `json:"file_name"`
+	FilePath     string `json:"file_path"`
+	Size         int    `json:"size"`
+	Encoding     string `json:"encoding"`
+	Content      string `json:"content"`
+	ContentSHA256 string `json:"content_sha256"`
+	Ref          string `json:"ref"`
+	BlobID       string `json:"blob_id"`
+	CommitID     string `json:"commit_id"`
+	LastCommitID string `json:"last_commit_id"`
+}
+
+// ListFiles retrieves all files in a specific path for a commit
+func (c *GitLabClient) ListFiles(ctx context.Context, repo types.Repository, commitSHA, path string) ([]string, error) {
+	projectPath, err := c.parseProjectPath(repo.URL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	// Use repository tree API
+	encodedPath := url.QueryEscape(projectPath)
+	apiURL := fmt.Sprintf("%s/projects/%s/repository/tree?ref=%s&recursive=true", 
+		c.baseURL, encodedPath, commitSHA)
+	
+	if path != "" {
+		apiURL += "&path=" + url.QueryEscape(path)
+	}
+
+	var tree []GitLabTreeItem
+	if err := c.makeRequest(ctx, "GET", apiURL, nil, &tree); err != nil {
+		return nil, fmt.Errorf("failed to get tree: %w", err)
+	}
+
+	var files []string
+	for _, item := range tree {
+		// Only include files (blobs)
+		if item.Type == "blob" {
+			files = append(files, item.Path)
+		}
+	}
+
+	return files, nil
+}
+
+// GetFileContent retrieves the content of a specific file
+func (c *GitLabClient) GetFileContent(ctx context.Context, repo types.Repository, commitSHA, filePath string) ([]byte, error) {
+	projectPath, err := c.parseProjectPath(repo.URL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	// Use files API
+	encodedPath := url.QueryEscape(projectPath)
+	encodedFilePath := url.QueryEscape(filePath)
+	apiURL := fmt.Sprintf("%s/projects/%s/repository/files/%s?ref=%s", 
+		c.baseURL, encodedPath, encodedFilePath, commitSHA)
+
+	var file GitLabFile
+	if err := c.makeRequest(ctx, "GET", apiURL, nil, &file); err != nil {
+		return nil, fmt.Errorf("failed to get file content: %w", err)
+	}
+
+	// Decode base64 content
+	if file.Encoding == "base64" {
+		decoded, err := base64.StdEncoding.DecodeString(file.Content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode content: %w", err)
+		}
+		return decoded, nil
+	}
+
+	return []byte(file.Content), nil
+}
+
+// CheckDirectoryExists checks if a directory exists in the repository
+func (c *GitLabClient) CheckDirectoryExists(ctx context.Context, repo types.Repository, commitSHA, dirPath string) (bool, error) {
+	projectPath, err := c.parseProjectPath(repo.URL)
+	if err != nil {
+		return false, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	// Use repository tree API to check if directory has content
+	encodedPath := url.QueryEscape(projectPath)
+	apiURL := fmt.Sprintf("%s/projects/%s/repository/tree?ref=%s&path=%s", 
+		c.baseURL, encodedPath, commitSHA, url.QueryEscape(dirPath))
+
+	var tree []GitLabTreeItem
+	if err := c.makeRequest(ctx, "GET", apiURL, nil, &tree); err != nil {
+		// If 404, directory doesn't exist
+		if networkErr, ok := err.(*NetworkError); ok {
+			if strings.Contains(networkErr.Err.Error(), "404") {
+				return false, nil
+			}
+		}
+		return false, fmt.Errorf("failed to check directory: %w", err)
+	}
+
+	return len(tree) > 0, nil
+}
+
+// parseProjectPath extracts the project path from GitLab repository URL
+func (c *GitLabClient) parseProjectPath(repoURL string) (string, error) {
+	// Parse URLs like:
+	// https://gitlab.com/group/project
+	// https://gitlab-master.nvidia.com/group/subgroup/project
+	
+	parsedURL, err := url.Parse(repoURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL format: %w", err)
+	}
+
+	// Validate that it's a proper HTTP/HTTPS URL
+	if parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return "", fmt.Errorf("invalid URL: missing scheme or host")
+	}
+	
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return "", fmt.Errorf("unsupported URL scheme: %s", parsedURL.Scheme)
+	}
+
+	path := strings.TrimPrefix(parsedURL.Path, "/")
+	path = strings.TrimSuffix(path, ".git")
+	
+	if path == "" {
+		return "", fmt.Errorf("empty project path")
+	}
+
+	return path, nil
 }
